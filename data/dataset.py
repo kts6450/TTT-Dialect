@@ -142,9 +142,6 @@ def build_dataloaders(
         generator=torch.Generator().manual_seed(42)
     )
 
-    if augment_train:
-        train_ds.dataset.augment = True
-
     pad_id = processor.tokenizer.pad_token_id
 
     def _collate(batch):
@@ -164,6 +161,58 @@ def build_dataloaders(
     )
 
     logger.info(f"DataLoader 생성 완료: train={n_train} / val={n_val} / test={n_test}")
+    return train_loader, val_loader, test_loader
+
+
+def build_dataloaders_from_split_dir(
+    split_dir: str,
+    processor: WhisperProcessor,
+    batch_size: int = 8,
+    num_workers: int = 0,
+    augment_train: bool = True,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    고정 분할(train/val/test.jsonl) 기반 DataLoader 생성.
+    논문 재현성을 위해 권장합니다.
+    """
+    split_path = Path(split_dir)
+    train_manifest = split_path / "train.jsonl"
+    val_manifest = split_path / "val.jsonl"
+    test_manifest = split_path / "test.jsonl"
+
+    if not (train_manifest.exists() and val_manifest.exists() and test_manifest.exists()):
+        raise FileNotFoundError(
+            f"분할 파일이 없습니다: {train_manifest}, {val_manifest}, {test_manifest}"
+        )
+
+    train_ds = KoreanSpeechDataset(
+        str(train_manifest), processor, augment=augment_train
+    )
+    val_ds = KoreanSpeechDataset(str(val_manifest), processor, augment=False)
+    test_ds = KoreanSpeechDataset(str(test_manifest), processor, augment=False)
+
+    pad_id = processor.tokenizer.pad_token_id
+
+    def _collate(batch):
+        return collate_fn(batch, pad_token_id=pad_id)
+
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True,
+        collate_fn=_collate, num_workers=num_workers
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False,
+        collate_fn=_collate, num_workers=num_workers
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=batch_size, shuffle=False,
+        collate_fn=_collate, num_workers=num_workers
+    )
+
+    logger.info(
+        "고정 분할 DataLoader 생성 완료: "
+        f"train={len(train_ds)} / val={len(val_ds)} / test={len(test_ds)}"
+    )
     return train_loader, val_loader, test_loader
 
 

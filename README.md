@@ -129,6 +129,28 @@ python -m evaluation.evaluate \
 - `wer_comparison.png` — 방언별 막대 그래프
 - `dialect_age_heatmap.png` — 방언×연령대 히트맵
 
+### Step 3 — 논문 실험 파이프라인 (B0/B1/P1/P2 + 통계검증 + 아블레이션)
+
+```bash
+python -m scripts.run_paper_pipeline \
+    --manifest ./data/processed/manifest.jsonl \
+    --finetuned_model ./checkpoints/finetune/best \
+    --split_dir ./data/processed/splits \
+    --result_dir ./evaluation/results
+```
+
+주요 산출물:
+- `baseline_per_speaker.csv` / `baseline_summary.json`
+- `ttt_variants_per_speaker.csv` / `ttt_variants_summary.json`
+- `stat_tests.json` / `paper_main_table.csv`
+- `ablation.csv` / `ablation_summary.csv`
+
+제출 패키지 생성:
+
+```bash
+python -m scripts.package_paper --result_dir ./evaluation/results --out_dir ./paper_package
+```
+
 ---
 
 ## TTT 동작 원리

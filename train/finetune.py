@@ -17,7 +17,7 @@ from tqdm import tqdm
 from loguru import logger
 
 from models.base_whisper import KoreanWhisperModel
-from data.dataset import build_dataloaders
+from data.dataset import build_dataloaders, build_dataloaders_from_split_dir
 from evaluation.metrics import compute_wer_cer
 
 
@@ -25,13 +25,21 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Whisper 한국어 노인·방언 파인튜닝")
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--manifest", required=True, help="manifest.jsonl 경로")
+    parser.add_argument("--split_dir", default=None, help="고정 분할(train/val/test.jsonl) 디렉토리")
     parser.add_argument("--resume", default=None, help="재시작할 체크포인트 경로")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 
 
 class Trainer:
-    def __init__(self, cfg: dict, manifest_path: str, device: str, resume: str | None):
+    def __init__(
+        self,
+        cfg: dict,
+        manifest_path: str,
+        device: str,
+        resume: str | None,
+        split_dir: str | None = None,
+    ):
         self.cfg = cfg
         self.device = torch.device(device)
         self.output_dir = Path(cfg["finetune"]["output_dir"])
@@ -47,11 +55,18 @@ class Trainer:
         self.model.unfreeze_all()
 
         # 데이터 로더
-        self.train_loader, self.val_loader, _ = build_dataloaders(
-            manifest_path=manifest_path,
-            processor=self.model.processor,
-            batch_size=cfg["finetune"]["batch_size"],
-        )
+        if split_dir:
+            self.train_loader, self.val_loader, _ = build_dataloaders_from_split_dir(
+                split_dir=split_dir,
+                processor=self.model.processor,
+                batch_size=cfg["finetune"]["batch_size"],
+            )
+        else:
+            self.train_loader, self.val_loader, _ = build_dataloaders(
+                manifest_path=manifest_path,
+                processor=self.model.processor,
+                batch_size=cfg["finetune"]["batch_size"],
+            )
 
         # 옵티마이저 & 스케줄러
         self.optimizer = AdamW(
@@ -165,6 +180,7 @@ def main():
         manifest_path=args.manifest,
         device=args.device,
         resume=args.resume,
+        split_dir=args.split_dir,
     )
     trainer.train()
 

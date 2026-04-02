@@ -12,17 +12,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import time
 import uuid
 import tempfile
+import io
 import numpy as np
 import torch
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 from pathlib import Path
-from audiorecorder import audiorecorder   # pip install streamlit-audiorecorder
+import soundfile as sf
+
+try:
+    from audiorecorder import audiorecorder
+    HAS_AUDIORECORDER = True
+except Exception:
+    HAS_AUDIORECORDER = False
 
 from models.base_whisper import KoreanWhisperModel
 from models.ttt_adapter import TTTAdapter, UserProfile
 from evaluation.metrics import compute_ttt_improvement
+from app.ui_metrics import UIMetricsLogger
 
 # ── 페이지 설정 ───────────────────────────────────────────────
 st.set_page_config(
@@ -35,6 +43,21 @@ st.set_page_config(
 SAMPLE_RATE = 16_000
 PROFILE_DIR = "./data/user_profiles"
 MODEL_CHECKPOINT = "./checkpoints/finetune/best"   # 없으면 베이스 모델 사용
+UI_LOG_PATH = "./evaluation/results/ui_events.csv"
+KIOSK_SCENARIOS = {
+    "복지 민원 접수": {
+        "prompt": "방문하신 목적을 말씀해 주세요.",
+        "example": "기초연금 신청하려고 왔어요. 서류가 뭐가 필요한지 알려주세요.",
+    },
+    "보건소 문진": {
+        "prompt": "현재 증상과 불편한 점을 말씀해 주세요.",
+        "example": "기침이 일주일 넘게 나고 밤에 더 심해요.",
+    },
+    "시설 예약 안내": {
+        "prompt": "예약하실 내용과 희망 날짜를 말씀해 주세요.",
+        "example": "다음 주 화요일 오전으로 예약하고 싶어요.",
+    },
+}
 
 # ── CSS 스타일 ────────────────────────────────────────────────
 st.markdown("""
@@ -109,6 +132,48 @@ def audio_to_feature(audio_np: np.ndarray, model: KoreanWhisperModel) -> torch.T
     return feat
 
 
+def capture_audio(
+    key: str,
+    start_label: str = "🔴 녹음 시작",
+    stop_label: str = "⏹️ 녹음 중지",
+) -> tuple[np.ndarray | None, bytes | None]:
+    """
+    오디오 입력 래퍼.
+    - streamlit-audiorecorder가 설치된 경우 기존 위젯 사용
+    - 미설치 시 st.audio_input으로 자동 폴백
+    """
+    if HAS_AUDIORECORDER:
+        try:
+            clip = audiorecorder(start_label, stop_label, key=key)
+            if len(clip) == 0:
+                return None, None
+            audio_np = np.array(clip.get_array_of_samples()).astype(np.float32)
+            audio_np /= np.iinfo(clip.array_type).max
+            return audio_np, clip.export().read()
+        except Exception:
+            # ffmpeg/ffprobe가 없는 환경에서 audiorecorder가 실패할 수 있어
+            # Streamlit 내장 audio_input으로 자동 폴백합니다.
+            if not st.session_state.get("_audio_fallback_notified", False):
+                st.warning(
+                    "녹음 모듈 환경(ffprobe) 문제로 기본 녹음 모드로 전환했습니다. "
+                    "계속 사용 가능합니다."
+                )
+                st.session_state["_audio_fallback_notified"] = True
+
+    audio_file = st.audio_input("🎙️ 마이크로 녹음", key=f"{key}_audio_input")
+    if audio_file is None:
+        return None, None
+
+    audio_bytes = audio_file.read()
+    audio_np, sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
+    if audio_np.ndim > 1:
+        audio_np = np.mean(audio_np, axis=1)
+    if sr != SAMPLE_RATE:
+        import librosa
+        audio_np = librosa.resample(audio_np, orig_sr=sr, target_sr=SAMPLE_RATE)
+    return audio_np.astype(np.float32), audio_bytes
+
+
 def save_audio_temp(audio_np: np.ndarray) -> str:
     """오디오를 임시 WAV 파일로 저장 후 경로 반환"""
     import soundfile as sf
@@ -175,6 +240,7 @@ def make_dialect_comparison_chart() -> go.Figure:
 # ══════════════════════════════════════════════════════════════
 def main():
     model, adapter = load_model_and_adapter()
+    ui_logger = UIMetricsLogger(UI_LOG_PATH)
 
     # ── 세션 상태 초기화 ─────────────────────────────────────
     if "user_id" not in st.session_state:
@@ -183,6 +249,8 @@ def main():
         st.session_state.profile = UserProfile.load(
             st.session_state.user_id, PROFILE_DIR
         )
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())[:8]
     if "calib_step" not in st.session_state:
         st.session_state.calib_step = 0
     if "calib_features" not in st.session_state:
@@ -191,6 +259,20 @@ def main():
         st.session_state.calib_texts = []
     if "transcription_history" not in st.session_state:
         st.session_state.transcription_history = []
+    if "task_start_ts" not in st.session_state:
+        st.session_state.task_start_ts = {}
+    if "kiosk_selected_scenario" not in st.session_state:
+        st.session_state.kiosk_selected_scenario = list(KIOSK_SCENARIOS.keys())[0]
+    if "kiosk_stage" not in st.session_state:
+        st.session_state.kiosk_stage = 1
+    if "kiosk_retries" not in st.session_state:
+        st.session_state.kiosk_retries = 0
+    if "kiosk_corrections" not in st.session_state:
+        st.session_state.kiosk_corrections = 0
+    if "kiosk_start_ts" not in st.session_state:
+        st.session_state.kiosk_start_ts = 0.0
+    if "kiosk_final_text" not in st.session_state:
+        st.session_state.kiosk_final_text = ""
 
     # ── 사이드바 ─────────────────────────────────────────────
     with st.sidebar:
@@ -225,6 +307,12 @@ def main():
         )
 
         if st.button("🔄 프로파일 초기화"):
+            ui_logger.log(
+                session_id=st.session_state.session_id,
+                user_id=st.session_state.user_id,
+                event_type="profile_reset",
+                meta={"reason": "manual_click"},
+            )
             st.session_state.profile = None
             st.session_state.calib_step = 0
             st.session_state.calib_features = []
@@ -239,7 +327,9 @@ def main():
     )
 
     # ── 탭 구성 ──────────────────────────────────────────────
-    tab1, tab2, tab3 = st.tabs(["🎯 캘리브레이션", "🎤 실시간 인식", "📊 성능 분석"])
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["🎯 캘리브레이션", "🎤 실시간 인식", "📊 성능 분석", "🏢 키오스크 시뮬레이션"]
+    )
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 탭 1: 캘리브레이션
@@ -264,24 +354,28 @@ def main():
                 unsafe_allow_html=True
             )
 
-            audio = audiorecorder("🔴 녹음 시작", "⏹️ 녹음 중지", key=f"calib_{step}")
-
-            if len(audio) > 0:
-                audio_np = np.array(audio.get_array_of_samples()).astype(np.float32)
-                audio_np /= np.iinfo(audio.array_type).max
-
-                st.audio(audio.export().read(), format="audio/wav")
+            audio_np, audio_bytes = capture_audio(key=f"calib_{step}")
+            if audio_np is not None and audio_bytes is not None:
+                st.audio(audio_bytes, format="audio/wav")
 
                 if st.button("✅ 이 녹음 사용하기", key=f"use_{step}"):
                     feat = audio_to_feature(audio_np, model)
                     st.session_state.calib_features.append(feat)
                     st.session_state.calib_texts.append(current_sentence)
                     st.session_state.calib_step += 1
+                    ui_logger.log(
+                        session_id=st.session_state.session_id,
+                        user_id=st.session_state.user_id,
+                        event_type="calibration_sample_saved",
+                        value=st.session_state.calib_step,
+                        meta={"sentence_idx": step},
+                    )
                     st.rerun()
         else:
             # 캘리브레이션 완료 → TTT 실행
             st.success("📝 모든 문장 녹음 완료! TTT 적응을 시작합니다...")
             if st.button("🚀 TTT 적응 시작", type="primary"):
+                start_ts = time.time()
                 with st.spinner("모델 적응 중... (약 20~30초)"):
                     profile = adapter.calibrate(
                         user_id=st.session_state.user_id,
@@ -291,6 +385,13 @@ def main():
                         age=age,
                     )
                     st.session_state.profile = profile
+                ui_logger.log(
+                    session_id=st.session_state.session_id,
+                    user_id=st.session_state.user_id,
+                    event_type="calibration_complete",
+                    value=round(time.time() - start_ts, 3),
+                    meta={"n_samples": len(st.session_state.calib_features)},
+                )
 
                 improvement = compute_ttt_improvement(profile.wer_before, profile.wer_after)
                 st.balloons()
@@ -313,16 +414,24 @@ def main():
 
         with col_left:
             st.markdown("#### 🔵 TTT 이전 (베이스 모델)")
-            audio_base = audiorecorder("🔴 녹음", "⏹️ 중지", key="base_rec")
-
-            if len(audio_base) > 0:
-                audio_np = np.array(audio_base.get_array_of_samples()).astype(np.float32)
-                audio_np /= np.iinfo(audio_base.array_type).max
-                st.audio(audio_base.export().read(), format="audio/wav")
+            audio_np, audio_bytes = capture_audio(
+                key="base_rec",
+                start_label="🔴 녹음",
+                stop_label="⏹️ 중지",
+            )
+            if audio_np is not None and audio_bytes is not None:
+                st.audio(audio_bytes, format="audio/wav")
 
                 with st.spinner("인식 중..."):
+                    st.session_state.task_start_ts["base_transcribe"] = time.time()
                     feat = audio_to_feature(audio_np, model)
                     result_base = model.transcribe(feat.unsqueeze(0))[0]
+                ui_logger.log(
+                    session_id=st.session_state.session_id,
+                    user_id=st.session_state.user_id,
+                    event_type="base_transcribe_complete",
+                    value=round(time.time() - st.session_state.task_start_ts["base_transcribe"], 3),
+                )
 
                 st.markdown(
                     f'<div class="transcript-box">{result_base or "(인식 실패)"}</div>',
@@ -336,16 +445,24 @@ def main():
             profile = st.session_state.profile
 
             if profile and profile.calibration_done:
-                audio_ttt = audiorecorder("🔴 녹음", "⏹️ 중지", key="ttt_rec")
-
-                if len(audio_ttt) > 0:
-                    audio_np = np.array(audio_ttt.get_array_of_samples()).astype(np.float32)
-                    audio_np /= np.iinfo(audio_ttt.array_type).max
-                    st.audio(audio_ttt.export().read(), format="audio/wav")
+                audio_np, audio_bytes = capture_audio(
+                    key="ttt_rec",
+                    start_label="🔴 녹음",
+                    stop_label="⏹️ 중지",
+                )
+                if audio_np is not None and audio_bytes is not None:
+                    st.audio(audio_bytes, format="audio/wav")
 
                     with st.spinner("개인화 모델로 인식 중..."):
+                        st.session_state.task_start_ts["ttt_transcribe"] = time.time()
                         feat = audio_to_feature(audio_np, model)
                         result_ttt = adapter.transcribe(st.session_state.user_id, feat)
+                    ui_logger.log(
+                        session_id=st.session_state.session_id,
+                        user_id=st.session_state.user_id,
+                        event_type="ttt_transcribe_complete",
+                        value=round(time.time() - st.session_state.task_start_ts["ttt_transcribe"], 3),
+                    )
 
                     st.markdown(
                         f'<div class="transcript-box">{result_ttt or "(인식 실패)"}</div>',
@@ -360,6 +477,7 @@ def main():
                         if corrected and corrected != result_ttt:
                             feat = st.session_state.get("last_feat")
                             if feat is not None:
+                                start_ts = time.time()
                                 with st.spinner("추가 적응 중..."):
                                     updated_profile = adapter.adapt_from_correction(
                                         user_id=st.session_state.user_id,
@@ -368,6 +486,13 @@ def main():
                                         profile=profile,
                                     )
                                     st.session_state.profile = updated_profile
+                                ui_logger.log(
+                                    session_id=st.session_state.session_id,
+                                    user_id=st.session_state.user_id,
+                                    event_type="correction_submitted",
+                                    value=round(time.time() - start_ts, 3),
+                                    meta={"text_length": len(corrected)},
+                                )
                                 st.success(f"적응 완료! (총 수정 횟수: {updated_profile.n_corrections}회)")
                         else:
                             st.info("수정된 내용이 없습니다.")
@@ -427,6 +552,178 @@ def main():
         st.plotly_chart(fig3, use_container_width=True)
 
         st.caption("* 기존 STT 수치는 공개 논문 및 자체 측정 참고치입니다.")
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 탭 4: 키오스크 시뮬레이션
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    with tab4:
+        st.markdown("### 키오스크 입력 보조 시뮬레이션")
+        st.caption(
+            "터치 중심 키오스크에서 고령층이 막히는 자유 입력 구간만 음성으로 보조하는 시나리오입니다."
+        )
+
+        scenario = st.selectbox(
+            "시나리오 선택",
+            list(KIOSK_SCENARIOS.keys()),
+            index=list(KIOSK_SCENARIOS.keys()).index(st.session_state.kiosk_selected_scenario),
+        )
+        st.session_state.kiosk_selected_scenario = scenario
+        scenario_meta = KIOSK_SCENARIOS[scenario]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("현재 단계", f"{st.session_state.kiosk_stage}/3")
+        c2.metric("재시도 횟수", st.session_state.kiosk_retries)
+        c3.metric("수정 횟수", st.session_state.kiosk_corrections)
+
+        st.markdown(
+            f"""
+<div class="metric-card">
+<b>안내 문구</b><br/>
+{scenario_meta["prompt"]}<br/><br/>
+<b>예시 발화</b><br/>
+{scenario_meta["example"]}
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if st.session_state.kiosk_stage == 1:
+            st.markdown("#### 1단계. 입력 시작")
+            st.info("아래 버튼을 눌러 음성 입력을 시작하거나, 직접 입력 모드로 전환할 수 있습니다.")
+
+            col_a, col_b = st.columns(2)
+            if col_a.button("🎙️ 음성으로 입력 시작", use_container_width=True):
+                st.session_state.kiosk_stage = 2
+                st.session_state.kiosk_start_ts = time.time()
+                ui_logger.log(
+                    session_id=st.session_state.session_id,
+                    user_id=st.session_state.user_id,
+                    event_type="kiosk_start",
+                    task_id=scenario,
+                )
+                st.rerun()
+            if col_b.button("⌨️ 직접 입력 모드", use_container_width=True):
+                st.session_state.kiosk_stage = 2
+                st.session_state.kiosk_start_ts = time.time()
+                st.session_state.kiosk_direct_mode = True
+                st.rerun()
+
+        elif st.session_state.kiosk_stage == 2:
+            st.markdown("#### 2단계. 내용 입력")
+
+            direct_mode = st.session_state.get("kiosk_direct_mode", False)
+            if direct_mode:
+                typed = st.text_area("입력 내용을 작성해 주세요", height=120)
+                if st.button("✅ 입력 완료", type="primary"):
+                    if typed.strip():
+                        st.session_state.kiosk_final_text = typed.strip()
+                        st.session_state.kiosk_stage = 3
+                        elapsed = time.time() - st.session_state.kiosk_start_ts
+                        ui_logger.log(
+                            session_id=st.session_state.session_id,
+                            user_id=st.session_state.user_id,
+                            event_type="kiosk_complete_direct",
+                            task_id=scenario,
+                            value=round(elapsed, 3),
+                            meta={"retries": st.session_state.kiosk_retries},
+                        )
+                        st.rerun()
+            else:
+                audio_np, audio_bytes = capture_audio(key="kiosk_rec")
+                if audio_np is not None and audio_bytes is not None:
+                    st.audio(audio_bytes, format="audio/wav")
+
+                    feat = audio_to_feature(audio_np, model)
+                    with st.spinner("기본 모델/개인화 모델 비교 중..."):
+                        base_text = model.transcribe(feat.unsqueeze(0))[0]
+                        if st.session_state.profile and st.session_state.profile.calibration_done:
+                            ttt_text = adapter.transcribe(st.session_state.user_id, feat)
+                        else:
+                            ttt_text = base_text
+
+                    col_l, col_r = st.columns(2)
+                    col_l.markdown("**기본 인식 결과**")
+                    col_l.markdown(
+                        f'<div class="transcript-box">{base_text or "(인식 실패)"}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    col_r.markdown("**개인화 인식 결과**")
+                    col_r.markdown(
+                        f'<div class="transcript-box">{ttt_text or "(인식 실패)"}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    chosen_text = st.text_area(
+                        "확정할 입력 문장 (필요 시 수정)",
+                        value=ttt_text,
+                        height=100,
+                    )
+                    c_ok, c_retry, c_touch = st.columns(3)
+                    if c_ok.button("✅ 이 결과로 입력", use_container_width=True):
+                        final_text = chosen_text.strip()
+                        if final_text:
+                            if final_text != ttt_text:
+                                st.session_state.kiosk_corrections += 1
+                                if st.session_state.profile and st.session_state.profile.calibration_done:
+                                    adapter.adapt_from_correction(
+                                        user_id=st.session_state.user_id,
+                                        audio_feature=feat,
+                                        corrected_text=final_text,
+                                        profile=st.session_state.profile,
+                                    )
+                            st.session_state.kiosk_final_text = final_text
+                            st.session_state.kiosk_stage = 3
+                            elapsed = time.time() - st.session_state.kiosk_start_ts
+                            ui_logger.log(
+                                session_id=st.session_state.session_id,
+                                user_id=st.session_state.user_id,
+                                event_type="kiosk_complete_voice",
+                                task_id=scenario,
+                                value=round(elapsed, 3),
+                                meta={
+                                    "retries": st.session_state.kiosk_retries,
+                                    "corrections": st.session_state.kiosk_corrections,
+                                    "base_text": base_text,
+                                    "ttt_text": ttt_text,
+                                },
+                            )
+                            st.rerun()
+                    if c_retry.button("🔁 다시 말하기", use_container_width=True):
+                        st.session_state.kiosk_retries += 1
+                        ui_logger.log(
+                            session_id=st.session_state.session_id,
+                            user_id=st.session_state.user_id,
+                            event_type="kiosk_retry",
+                            task_id=scenario,
+                        )
+                        st.rerun()
+                    if c_touch.button("⌨️ 직접 입력으로 전환", use_container_width=True):
+                        st.session_state.kiosk_retries += 1
+                        st.session_state.kiosk_direct_mode = True
+                        st.rerun()
+
+        else:
+            st.markdown("#### 3단계. 입력 완료")
+            elapsed = time.time() - st.session_state.kiosk_start_ts if st.session_state.kiosk_start_ts else 0.0
+            st.success("입력이 완료되었습니다. 아래 내용을 확인해 주세요.")
+            st.markdown(
+                f'<div class="transcript-box">{st.session_state.kiosk_final_text}</div>',
+                unsafe_allow_html=True,
+            )
+
+            k1, k2, k3 = st.columns(3)
+            k1.metric("총 소요시간", f"{elapsed:.1f}초")
+            k2.metric("재시도 횟수", st.session_state.kiosk_retries)
+            k3.metric("수정 횟수", st.session_state.kiosk_corrections)
+
+            if st.button("새 시뮬레이션 시작"):
+                st.session_state.kiosk_stage = 1
+                st.session_state.kiosk_retries = 0
+                st.session_state.kiosk_corrections = 0
+                st.session_state.kiosk_start_ts = 0.0
+                st.session_state.kiosk_final_text = ""
+                st.session_state.kiosk_direct_mode = False
+                st.rerun()
 
 
 if __name__ == "__main__":
