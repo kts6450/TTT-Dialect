@@ -33,8 +33,9 @@ class KoreanWhisperModel(nn.Module):
         self.forced_decoder_ids = self.processor.get_decoder_prompt_ids(
             language="korean", task="transcribe"
         )
-        self.model.config.forced_decoder_ids = self.forced_decoder_ids
-        self.model.config.suppress_tokens = []
+        # generation_config에 설정 (model.config 직접 수정은 deprecated)
+        self.model.generation_config.forced_decoder_ids = self.forced_decoder_ids
+        self.model.generation_config.suppress_tokens = []
 
     @property
     def device(self) -> torch.device:
@@ -119,7 +120,8 @@ class KoreanWhisperModel(nn.Module):
         instance.forced_decoder_ids = instance.processor.get_decoder_prompt_ids(
             language="korean", task="transcribe"
         )
-        instance.model.config.forced_decoder_ids = instance.forced_decoder_ids
+        instance.model.generation_config.forced_decoder_ids = instance.forced_decoder_ids
+        instance.model.generation_config.suppress_tokens = []
         logger.success(f"모델 로드 완료: {checkpoint_dir}")
         return instance
 
