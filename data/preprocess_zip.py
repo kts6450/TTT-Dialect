@@ -109,9 +109,9 @@ def find_label_zip(audio_zip_name: str, label_zip_dir: Path) -> Optional[Path]:
         return None
     category = match.group(1).strip()
 
-        for label_zip in label_zip_dir.glob("*.zip"):
-            if "[라벨]" in label_zip.name and category in label_zip.name:
-                return label_zip
+    for label_zip in label_zip_dir.glob("*.zip"):
+        if "[라벨]" in label_zip.name and category in label_zip.name:
+            return label_zip
     return None
 
 
