@@ -39,9 +39,26 @@ print(f"음성 stem: {len(wav_stems)}개")
 print(f"라벨 stem: {len(json_stems)}개")
 print(f"매칭: {len(matched)}개")
 
-if len(matched) == 0:
-    print("\n[매칭 없음] stem 샘플 비교:")
-    wav_sample = list(wav_stems)[:3]
-    json_sample = list(json_stems)[:3]
-    print(f"  음성 stems: {wav_sample}")
-    print(f"  라벨 stems: {json_sample}")
+print(f"\n=== JSON 내용 샘플 확인 ===")
+with zipfile.ZipFile(LABEL_ZIP, "r") as lzf:
+    json_entries = [n for n in lzf.namelist() if n.lower().endswith(".json")]
+    for entry in json_entries[:3]:
+        print(f"\n파일: {Path(entry).name}")
+        try:
+            with lzf.open(entry) as f:
+                raw = f.read()
+            # UTF-8 시도
+            try:
+                data = __import__('json').loads(raw.decode('utf-8'))
+                print(f"  인코딩: UTF-8")
+            except UnicodeDecodeError:
+                data = __import__('json').loads(raw.decode('euc-kr'))
+                print(f"  인코딩: EUC-KR")
+            
+            print(f"  최상위 키: {list(data.keys())}")
+            if '전사정보' in data:
+                print(f"  전사정보: {data['전사정보']}")
+            if '화자정보' in data:
+                print(f"  화자정보: {data['화자정보']}")
+        except Exception as e:
+            print(f"  오류: {e}")
