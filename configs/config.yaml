@@ -24,7 +24,7 @@ finetune:
   num_epochs: 3
   warmup_ratio: 0.1
   weight_decay: 0.01
-  eval_steps: 500
+  eval_steps: 2000
   save_steps: 1000
   output_dir: "F:/TTT-data/checkpoints/finetune"
 
