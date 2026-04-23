@@ -17,14 +17,16 @@ from tqdm import tqdm
 from loguru import logger
 
 from models.base_whisper import KoreanWhisperModel
-from data.dataset import build_dataloaders, build_dataloaders_from_split_dir
+from data.dataset import build_dataloaders, build_dataloaders_from_split_dir, build_dataloaders_from_manifests
 from evaluation.metrics import compute_wer_cer
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Whisper 한국어 노인·방언 파인튜닝")
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--manifest", required=True, help="manifest.jsonl 경로")
+    parser.add_argument("--manifest", default=None, help="manifest.jsonl 경로")
+    parser.add_argument("--train_manifest", default=None, help="train manifest 경로")
+    parser.add_argument("--val_manifest", default=None, help="val manifest 경로")
     parser.add_argument("--split_dir", default=None, help="고정 분할(train/val/test.jsonl) 디렉토리")
     parser.add_argument("--resume", default=None, help="재시작할 체크포인트 경로")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -58,6 +60,13 @@ class Trainer:
         if split_dir:
             self.train_loader, self.val_loader, _ = build_dataloaders_from_split_dir(
                 split_dir=split_dir,
+                processor=self.model.processor,
+                batch_size=cfg["finetune"]["batch_size"],
+            )
+        elif self.cfg.get("train_manifest") and self.cfg.get("val_manifest"):
+            self.train_loader, self.val_loader = build_dataloaders_from_manifests(
+                train_manifest=self.cfg["train_manifest"],
+                val_manifest=self.cfg["val_manifest"],
                 processor=self.model.processor,
                 batch_size=cfg["finetune"]["batch_size"],
             )
@@ -174,6 +183,10 @@ def main():
 
     os.makedirs("logs", exist_ok=True)
     logger.add(cfg["logging"]["file"], rotation="10 MB")
+
+    if args.train_manifest and args.val_manifest:
+        cfg["train_manifest"] = args.train_manifest
+        cfg["val_manifest"] = args.val_manifest
 
     trainer = Trainer(
         cfg=cfg,

@@ -3,8 +3,10 @@ PyTorch Dataset / DataLoader 정의
 Whisper 입력 형식(log-mel spectrogram + token ids)으로 변환합니다.
 """
 
+import io
 import json
 import random
+import zipfile
 import numpy as np
 import torch
 from pathlib import Path
@@ -19,6 +21,14 @@ SAMPLE_RATE = 16_000
 
 def load_audio_np(path: str, sr: int = SAMPLE_RATE) -> np.ndarray:
     audio, _ = librosa.load(path, sr=sr, mono=True)
+    return audio
+
+
+def load_audio_from_zip(zip_path: str, entry: str, sr: int = SAMPLE_RATE) -> np.ndarray:
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        with zf.open(entry) as wav_file:
+            audio_bytes = wav_file.read()
+    audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=sr, mono=True)
     return audio
 
 
@@ -76,7 +86,10 @@ class KoreanSpeechDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         sample = self.samples[idx]
 
-        audio = load_audio_np(sample["audio_path"])
+        if "audio_zip" in sample:
+            audio = load_audio_from_zip(sample["audio_zip"], sample["audio_entry"])
+        else:
+            audio = load_audio_np(sample["audio_path"])
 
         if self.augment:
             audio = self._augment_audio(audio)
@@ -214,6 +227,35 @@ def build_dataloaders_from_split_dir(
         f"train={len(train_ds)} / val={len(val_ds)} / test={len(test_ds)}"
     )
     return train_loader, val_loader, test_loader
+
+
+def build_dataloaders_from_manifests(
+    train_manifest: str,
+    val_manifest: str,
+    processor: WhisperProcessor,
+    batch_size: int = 8,
+    num_workers: int = 0,
+    augment_train: bool = True,
+) -> tuple[DataLoader, DataLoader]:
+    """train/val manifest를 각각 받아 DataLoader 생성"""
+    train_ds = KoreanSpeechDataset(train_manifest, processor, augment=augment_train)
+    val_ds = KoreanSpeechDataset(val_manifest, processor, augment=False)
+
+    pad_id = processor.tokenizer.pad_token_id
+
+    def _collate(batch):
+        return collate_fn(batch, pad_token_id=pad_id)
+
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, shuffle=True,
+        collate_fn=_collate, num_workers=num_workers,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False,
+        collate_fn=_collate, num_workers=num_workers,
+    )
+    logger.info(f"DataLoader 생성: train={len(train_ds)} / val={len(val_ds)}")
+    return train_loader, val_loader
 
 
 class UserCalibrationDataset(Dataset):
