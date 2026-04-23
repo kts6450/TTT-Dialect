@@ -8,6 +8,7 @@ import json
 import random
 import functools
 import zipfile
+from functools import partial
 import numpy as np
 import soundfile as sf
 import torch
@@ -132,6 +133,10 @@ class KoreanSpeechDataset(Dataset):
         }
 
 
+def _collate_with_pad(batch: list[dict], pad_token_id: int) -> dict:
+    return collate_fn(batch, pad_token_id=pad_token_id)
+
+
 def collate_fn(batch: list[dict], pad_token_id: int = -100) -> dict:
     """배치 패딩 처리"""
     input_features = torch.stack([b["input_features"] for b in batch])
@@ -172,9 +177,7 @@ def build_dataloaders(
     )
 
     pad_id = processor.tokenizer.pad_token_id
-
-    def _collate(batch):
-        return collate_fn(batch, pad_token_id=pad_id)
+    _collate = partial(_collate_with_pad, pad_token_id=pad_id)
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
@@ -221,9 +224,7 @@ def build_dataloaders_from_split_dir(
     test_ds = KoreanSpeechDataset(str(test_manifest), processor, augment=False)
 
     pad_id = processor.tokenizer.pad_token_id
-
-    def _collate(batch):
-        return collate_fn(batch, pad_token_id=pad_id)
+    _collate = partial(_collate_with_pad, pad_token_id=pad_id)
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
@@ -258,9 +259,7 @@ def build_dataloaders_from_manifests(
     val_ds = KoreanSpeechDataset(val_manifest, processor, augment=False)
 
     pad_id = processor.tokenizer.pad_token_id
-
-    def _collate(batch):
-        return collate_fn(batch, pad_token_id=pad_id)
+    _collate = partial(_collate_with_pad, pad_token_id=pad_id)
 
     pin = num_workers > 0
     train_loader = DataLoader(
