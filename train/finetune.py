@@ -10,8 +10,7 @@ import os
 import yaml
 import torch
 
-# cuDNN benchmark 모드: 입력 크기에 최적 알고리즘 자동 탐색
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.enabled = True
 from pathlib import Path
 from torch.optim import AdamW
@@ -60,6 +59,13 @@ class Trainer:
         self.model.model.to(self.device)
         self.model.unfreeze_all()
 
+        # VRAM 절약: gradient checkpointing (활성화 재계산으로 메모리 60% 절감)
+        self.model.model.gradient_checkpointing_enable()
+
+        # fp16 혼합정밀도 학습
+        self.scaler = torch.cuda.amp.GradScaler()
+        self.use_amp = (self.device.type == "cuda")
+
         # 데이터 로더
         if split_dir:
             self.train_loader, self.val_loader, _ = build_dataloaders_from_split_dir(
@@ -99,37 +105,48 @@ class Trainer:
     def _train_epoch(self, epoch: int) -> float:
         self.model.model.train()
         total_loss = 0.0
+        accum_steps = self.cfg["finetune"].get("gradient_accumulation_steps", 1)
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch} [Train]")
 
-        for batch in pbar:
+        self.optimizer.zero_grad()
+        for step, batch in enumerate(pbar):
             input_features = batch["input_features"].to(self.device)
             labels = batch["labels"].to(self.device)
 
-            self.optimizer.zero_grad()
-            output = self.model(input_features=input_features, labels=labels)
-            loss = output.loss
-            loss.backward()
+            with torch.cuda.amp.autocast(enabled=self.use_amp):
+                output = self.model(input_features=input_features, labels=labels)
+                loss = output.loss / accum_steps
 
-            torch.nn.utils.clip_grad_norm_(
-                self.model.model.parameters(), max_norm=1.0
-            )
-            self.optimizer.step()
-            self.scheduler.step()
+            self.scaler.scale(loss).backward()
 
-            total_loss += loss.item()
-            self.global_step += 1
-            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{self.scheduler.get_last_lr()[0]:.2e}")
+            if (step + 1) % accum_steps == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.model.parameters(), max_norm=1.0
+                )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
+                self.global_step += 1
 
-            if self.global_step % self.cfg["finetune"]["eval_steps"] == 0:
-                val_wer = self._validate()
-                logger.info(f"Step {self.global_step} | Val WER: {val_wer:.4f}")
-                if val_wer < self.best_val_wer:
-                    self.best_val_wer = val_wer
-                    self.model.save(str(self.output_dir / "best"))
-                    logger.success(f"최고 모델 저장 (WER: {val_wer:.4f})")
-                self.model.model.train()
+                total_loss += loss.item() * accum_steps
+                pbar.set_postfix(
+                    loss=f"{loss.item() * accum_steps:.4f}",
+                    lr=f"{self.scheduler.get_last_lr()[0]:.2e}",
+                )
 
-        return total_loss / len(self.train_loader)
+                if self.global_step % self.cfg["finetune"]["eval_steps"] == 0:
+                    val_wer = self._validate()
+                    logger.info(f"Step {self.global_step} | Val WER: {val_wer:.4f}")
+                    if val_wer < self.best_val_wer:
+                        self.best_val_wer = val_wer
+                        self.model.save(str(self.output_dir / "best"))
+                        logger.success(f"최고 모델 저장 (WER: {val_wer:.4f})")
+                    self.model.model.train()
+
+        num_updates = len(self.train_loader) // accum_steps
+        return total_loss / max(num_updates, 1)
 
     @torch.no_grad()
     def _validate(self) -> float:
