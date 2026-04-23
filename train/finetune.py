@@ -9,6 +9,9 @@ import argparse
 import os
 import yaml
 import torch
+
+# PyTorch 1.12 + CUDA 11.3 환경에서 cuDNN convolution 알고리즘 탐색 실패 방지
+torch.backends.cudnn.enabled = False
 from pathlib import Path
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
