@@ -40,7 +40,16 @@ TTT/
 │   ├── metrics.py           # WER/CER, 방언별·연령대별 분석
 │   └── evaluate.py          # TTT 전·후 벤치마크 + 시각화
 ├── app/
-│   └── demo.py              # Streamlit 실시간 데모
+│   └── demo.py              # Streamlit TTT 캘리브레이션 데모
+├── demo/                    # 키오스크 + 챗봇 데모 (학습된 모델 사용)
+│   ├── app_kiosk.py         #   - 음성으로 메뉴 주문 (메인 데모)
+│   ├── app_chatbot.py       #   - 음성·텍스트 챗봇 (Claude API)
+│   ├── asr.py               #   - Whisper 추론 wrapper (TTT_MODEL_PATH)
+│   ├── matcher.py           #   - 메뉴 매칭 (키워드 + fuzzy + 수량 추출)
+│   ├── llm.py               #   - Claude API wrapper (claude-sonnet-4-6)
+│   ├── menu.json            #   - 가상 메뉴 데이터
+│   ├── tests/               #   - 단위 테스트 (모델 의존성 없이 통과)
+│   └── README.md            #   - 데모 실행 방법 + 모델 swap 절차
 ├── scripts/
 │   ├── download_data.py     # AI Hub 다운로드 가이드 + KSS 샘플
 │   └── quick_test.py        # 데이터 없이 TTT 기능 즉시 검증
@@ -74,10 +83,51 @@ python scripts/download_data.py --kss-sample
 ### 4. Streamlit 데모 실행
 
 ```bash
+# (a) TTT 캘리브레이션 데모 — 사용자 목소리에 실시간 적응
 streamlit run app/demo.py
+
+# (b) 키오스크 데모 — 음성으로 메뉴 주문 (메인)
+streamlit run demo/app_kiosk.py
+
+# (c) 챗봇 데모 — Claude API 기반 음성/텍스트 대화
+set ANTHROPIC_API_KEY=sk-ant-...
+streamlit run demo/app_chatbot.py
 ```
 
-브라우저에서 `http://localhost:8501` 접속
+브라우저에서 `http://localhost:8501` 접속.
+키오스크/챗봇 상세 실행 옵션과 환경변수는 `demo/README.md` 참고.
+
+---
+
+## 키오스크·챗봇 데모
+
+**메인 시연 시나리오:** 방언 쓰는 노인이 음성으로 메뉴를 주문하면
+키오스크가 알아듣고 화면에 주문서를 띄운다.
+
+- `demo/app_kiosk.py` — 학습된 Whisper로 음성 인식 → 메뉴 매칭(키워드+fuzzy)
+  → 큰 글씨 주문서 + 확인/취소 버튼. 노인 친화 UI (24pt+, 강한 대비, 64px 버튼).
+- `demo/app_chatbot.py` — Claude API(`claude-sonnet-4-6`) 기반 일반 대화 비서.
+  음성·텍스트 입력 모두 지원, 답변 TTS 옵션(gTTS).
+
+**모델 도착 전후 swap:** `TTT_MODEL_PATH` 환경변수로 학습된 체크포인트를
+가리키면 자동으로 학습된 모델 사용. 변수 미설정 시 `openai/whisper-small`로
+폴백, `TTT_ASR_BACKEND=dummy`로 두면 모델 없이 UI plumbing만 검증 가능.
+
+```bash
+# UI 검증 단계 (모델 도착 전)
+set TTT_ASR_BACKEND=dummy
+streamlit run demo/app_kiosk.py
+
+# 학습 모델 도착 후 — 코드 변경 0줄
+set TTT_MODEL_PATH=C:\path\to\checkpoints\combined\best
+streamlit run demo/app_kiosk.py
+```
+
+데모 단위 테스트 (모델/임베딩 의존성 없이 통과):
+
+```bash
+python -m pytest demo/tests -v
+```
 
 ---
 
