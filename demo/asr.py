@@ -42,6 +42,20 @@ def _resample_if_needed(audio: np.ndarray, sr: int) -> np.ndarray:
     return librosa.resample(audio, orig_sr=sr, target_sr=TARGET_SR).astype(np.float32)
 
 
+def _pick_device() -> str:
+    """CUDA → MPS(Apple Silicon) → CPU 우선순위로 자동 선택.
+
+    Apple Silicon 맥북에서 발표할 때 CPU 대비 5~10배 빨라진다 (M시리즈 GPU 활용).
+    """
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class WhisperASR:
     """HuggingFace Whisper 체크포인트 추론 래퍼."""
 
@@ -50,7 +64,7 @@ class WhisperASR:
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
         path = model_path or os.environ.get("TTT_MODEL_PATH", DEFAULT_MODEL)
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or _pick_device()
         self.processor = WhisperProcessor.from_pretrained(path)
         self.model = WhisperForConditionalGeneration.from_pretrained(path).to(self.device)
         self.model.eval()
