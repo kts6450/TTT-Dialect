@@ -1,0 +1,23 @@
+# 웹 서버
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.20
+
+# ASR (demo와 같은 스택)
+transformers>=4.39.0
+torch>=2.2.0
+torchaudio>=2.2.0
+librosa>=0.10.1
+soundfile>=0.12.1
+numpy>=1.26.0
+
+# LLM
+anthropic>=0.50.0
+
+# TTS
+gTTS>=2.5.0
+
+# 유틸
+pydantic>=2.5.0
+python-dateutil>=2.8.0
+python-dotenv>=1.0.0

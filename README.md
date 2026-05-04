@@ -41,15 +41,23 @@ TTT/
 │   └── evaluate.py          # TTT 전·후 벤치마크 + 시각화
 ├── app/
 │   └── demo.py              # Streamlit TTT 캘리브레이션 데모
-├── demo/                    # 키오스크 + 챗봇 데모 (학습된 모델 사용)
-│   ├── app_kiosk.py         #   - 음성으로 메뉴 주문 (메인 데모)
-│   ├── app_chatbot.py       #   - 음성·텍스트 챗봇 (Claude API)
-│   ├── asr.py               #   - Whisper 추론 wrapper (TTT_MODEL_PATH)
+├── demo/                    # Streamlit 시연 데모 (간단)
+│   ├── app_kiosk.py         #   - 음성으로 메뉴 주문 (Streamlit)
+│   ├── app_chatbot.py       #   - 음성·텍스트 챗봇 (Streamlit)
+│   ├── asr.py               #   - Whisper 추론 wrapper (CUDA→MPS→CPU 자동 선택)
 │   ├── matcher.py           #   - 메뉴 매칭 (키워드 + fuzzy + 수량 추출)
 │   ├── llm.py               #   - Claude API wrapper (claude-sonnet-4-6)
 │   ├── menu.json            #   - 가상 메뉴 데이터
 │   ├── tests/               #   - 단위 테스트 (모델 의존성 없이 통과)
 │   └── README.md            #   - 데모 실행 방법 + 모델 swap 절차
+├── webapp/                  # ⭐ Hades — 풀스택 음성 예약 챗봇 (메인 시연)
+│   ├── backend/             #   FastAPI — ASR + Claude API + TTS + 카탈로그
+│   ├── frontend/            #   Vite + React + TS + Tailwind + Zustand
+│   ├── docker-compose.yml
+│   └── README.md
+├── Dockerfile               # demo/ 컨테이너용 (CPU only)
+├── docker-compose.yml       # demo/ 키오스크 + 챗봇 통합
+├── .env.example             # 환경변수 템플릿
 ├── scripts/
 │   ├── download_data.py     # AI Hub 다운로드 가이드 + KSS 샘플
 │   └── quick_test.py        # 데이터 없이 TTT 기능 즉시 검증
@@ -97,9 +105,50 @@ streamlit run demo/app_chatbot.py
 브라우저에서 `http://localhost:8501` 접속.
 키오스크/챗봇 상세 실행 옵션과 환경변수는 `demo/README.md` 참고.
 
+### 5. Hades 풀스택 데모 (메인 시연)
+
+```bash
+# 백엔드 (FastAPI)
+cd webapp/backend
+pip install -r requirements.txt
+uvicorn main:app --port 8088 --reload
+
+# 프론트엔드 (Vite + React, 다른 터미널)
+cd webapp/frontend
+npm install
+npm run dev
+```
+
+브라우저에서 `http://localhost:5173`. 자세한 내용은 `webapp/README.md`.
+
 ---
 
-## 키오스크·챗봇 데모
+## Hades — 풀스택 음성 예약 데모
+
+**메인 시연 시나리오:** 노인이 체험 활동(도자기 빚기, 김치 담그기,
+한강 사진 등)을 음성 또는 클릭으로 예약. 학습된 방언/노인 Whisper +
+Claude API + 노인 친화 React UI.
+
+핵심 기능:
+- **Zero UI 음성 대화** — 마이크 한 번에 자연 발화로 끝까지
+- **음성 + 클릭 병행** — 둘 중 어느 쪽이든 슬롯 채워짐
+- **단계별 진행** — 체험 → 날짜 → 시간 → 인원 → 이름 → 연락처 → 확정
+- **실시간 시각화** — 마이크 음량 막대, 답변 음파, 현재 단계 강조
+- **노인 친화** — 큰 글씨 토글(보통/크게/특대), 강한 대비, 큰 버튼
+- **카탈로그 연동** — 음성으로 체험 말하면 사이드 카드 자동 강조
+- **TTS 답변** — gTTS로 한국어 음성 자동 재생
+- **확인 카드 + 영수증** — 예약 확정 → 예약번호 영수증
+
+기술 스택:
+- 백엔드: FastAPI + Python (`webapp/backend/`)
+- 프론트엔드: Vite + React + TypeScript + Tailwind + Zustand (`webapp/frontend/`)
+- ASR/LLM/TTS: `demo/asr.py` 재사용 + Claude SDK + gTTS
+
+`webapp/README.md`에 상세 실행 방법.
+
+---
+
+## Streamlit 키오스크·챗봇 데모 (간단)
 
 **메인 시연 시나리오:** 방언 쓰는 노인이 음성으로 메뉴를 주문하면
 키오스크가 알아듣고 화면에 주문서를 띄운다.

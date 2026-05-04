@@ -7,3 +7,23 @@ __pycache__/
 evaluation/results/
 data/user_profiles/
 paper_package/
+
+# 로컬 환경변수 (API 키 포함 가능 — git에 올리지 않음)
+.env
+
+# Docker compose 빈 모델 placeholder
+.docker_empty_models/
+
+# Node / 프론트엔드
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code 로컬 설정
+.claude/

@@ -56,6 +56,31 @@ def _pick_device() -> str:
     return "cpu"
 
 
+def _resolve_model_path(raw: str) -> str:
+    """학습된 체크포인트 경로 검증 + 비어있으면 base 모델로 폴백.
+
+    Docker 환경에서 빈 placeholder 디렉토리를 마운트했을 때, transformers의
+    cryptic OSError 대신 명확한 동작을 하도록.
+    """
+    from pathlib import Path
+
+    # HuggingFace hub 식별자 (예: "openai/whisper-small") — 검증 안 하고 그대로
+    if "/" in raw and not raw.startswith(("/", ".")) and not (len(raw) > 2 and raw[1] == ":"):
+        return raw
+
+    p = Path(raw)
+    if not p.exists():
+        return DEFAULT_MODEL  # 경로 없음 → base 모델
+
+    # 디렉토리지만 Whisper 체크포인트가 아닌 경우 (config.json / preprocessor_config.json 둘 다 없음)
+    has_config = (p / "config.json").exists()
+    has_preproc = (p / "preprocessor_config.json").exists()
+    if not (has_config and has_preproc):
+        return DEFAULT_MODEL
+
+    return raw
+
+
 class WhisperASR:
     """HuggingFace Whisper 체크포인트 추론 래퍼."""
 
@@ -63,7 +88,8 @@ class WhisperASR:
         import torch
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        path = model_path or os.environ.get("TTT_MODEL_PATH", DEFAULT_MODEL)
+        raw = model_path or os.environ.get("TTT_MODEL_PATH") or DEFAULT_MODEL
+        path = _resolve_model_path(raw)
         self.device = device or _pick_device()
         self.processor = WhisperProcessor.from_pretrained(path)
         self.model = WhisperForConditionalGeneration.from_pretrained(path).to(self.device)
