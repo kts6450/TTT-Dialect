@@ -1,0 +1,21 @@
+# 로컬링크 Local Link — 정적 프론트 + nginx (/api → 백엔드)
+# 빌드: 저장소 루트에서 docker compose build hades-web
+
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /build
+
+COPY webapp/frontend/package.json webapp/frontend/package-lock.json ./
+RUN npm ci
+
+COPY webapp/frontend/ ./
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+COPY webapp/docker/nginx-hades.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-build /build/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

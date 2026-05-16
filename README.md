@@ -50,13 +50,14 @@ TTT/
 │   ├── menu.json            #   - 가상 메뉴 데이터
 │   ├── tests/               #   - 단위 테스트 (모델 의존성 없이 통과)
 │   └── README.md            #   - 데모 실행 방법 + 모델 swap 절차
-├── webapp/                  # ⭐ Hades — 풀스택 음성 예약 챗봇 (메인 시연)
-│   ├── backend/             #   FastAPI — ASR + Claude API + TTS + 카탈로그
-│   ├── frontend/            #   Vite + React + TS + Tailwind + Zustand
-│   ├── docker-compose.yml
+├── webapp/                  # ⭐ 로컬링크 (Local Link) — 판매자·구매자 장터 (Zero UI)
+│   ├── backend/             #   FastAPI — 마켓플레이스 API + 음성
+│   ├── frontend/            #   Vite + React + React Router + Tailwind
+│   ├── docker/              #   Docker용 nginx 설정
+│   ├── Dockerfile.backend   #   API 이미지
+│   ├── Dockerfile.frontend  #   정적 빌드 + nginx
 │   └── README.md
-├── Dockerfile               # demo/ 컨테이너용 (CPU only)
-├── docker-compose.yml       # demo/ 키오스크 + 챗봇 통합
+├── docker-compose.yml       # 로컬링크 풀스택 (FastAPI + nginx)
 ├── .env.example             # 환경변수 템플릿
 ├── scripts/
 │   ├── download_data.py     # AI Hub 다운로드 가이드 + KSS 샘플
@@ -105,46 +106,31 @@ streamlit run demo/app_chatbot.py
 브라우저에서 `http://localhost:8501` 접속.
 키오스크/챗봇 상세 실행 옵션과 환경변수는 `demo/README.md` 참고.
 
-### 5. Hades 풀스택 데모 (메인 시연)
+### 5. 로컬링크 (Local Link) — 동네 장터 (Zero UI, 메인 시연)
 
 ```bash
-# 백엔드 (FastAPI)
-cd webapp/backend
-pip install -r requirements.txt
-uvicorn main:app --port 8088 --reload
-
-# 프론트엔드 (Vite + React, 다른 터미널)
-cd webapp/frontend
-npm install
-npm run dev
+cd webapp/backend && pip install -r requirements.txt && uvicorn main:app --port 8088 --reload
+cd webapp/frontend && npm install && npm run dev
 ```
 
-브라우저에서 `http://localhost:5173`. 자세한 내용은 `webapp/README.md`.
+브라우저 http://localhost:5173 — 판매자 등록·구매자 장바구니·모의 결제. 상세는 `webapp/README.md`.
+
+**Docker:** 저장소 루트에서 `docker compose up --build` → http://localhost:8080
 
 ---
 
-## Hades — 풀스택 음성 예약 데모
+## 로컬링크 (Local Link) — 풀스택 장터 데모
 
-**메인 시연 시나리오:** 노인이 체험 활동(도자기 빚기, 김치 담그기,
-한강 사진 등)을 음성 또는 클릭으로 예약. 학습된 방언/노인 Whisper +
-Claude API + 노인 친화 React UI.
+**시나리오:** 어르신 **판매자**가 상품·숙박을 올리고, **구매자**가 말로 또는 화면으로 주문·**가짜 결제**까지.
 
-핵심 기능:
-- **Zero UI 음성 대화** — 마이크 한 번에 자연 발화로 끝까지
-- **음성 + 클릭 병행** — 둘 중 어느 쪽이든 슬롯 채워짐
-- **단계별 진행** — 체험 → 날짜 → 시간 → 인원 → 이름 → 연락처 → 확정
-- **실시간 시각화** — 마이크 음량 막대, 답변 음파, 현재 단계 강조
-- **노인 친화** — 큰 글씨 토글(보통/크게/특대), 강한 대비, 큰 버튼
-- **카탈로그 연동** — 음성으로 체험 말하면 사이드 카드 자동 강조
-- **TTS 답변** — gTTS로 한국어 음성 자동 재생
-- **확인 카드 + 영수증** — 예약 확정 → 예약번호 영수증
+핵심:
+- **Zero UI** — 구매/판매 각각 `voice` 모드 + 큰 글씨·큰 버튼
+- **목록·주문** — JSON persistence (`data/runtime/`), 운영 시 DB 교체 가능
+- **모의 결제** — `mock-pay` 엔드포인트, 실제 PG 없음
 
-기술 스택:
-- 백엔드: FastAPI + Python (`webapp/backend/`)
-- 프론트엔드: Vite + React + TypeScript + Tailwind + Zustand (`webapp/frontend/`)
-- ASR/LLM/TTS: `demo/asr.py` 재사용 + Claude SDK + gTTS
+기술: FastAPI + Vite/React Router + Zustand + Whisper ASR(선택) + Claude + gTTS
 
-`webapp/README.md`에 상세 실행 방법.
+`webapp/README.md`에 배포 메모(CORS, HTTPS, gunicorn) 포함.
 
 ---
 

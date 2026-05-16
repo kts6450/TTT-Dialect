@@ -1,0 +1,54 @@
+[
+  {
+    "id": "seed-rice-10kg",
+    "seller_id": "seller-demo-1",
+    "kind": "product",
+    "title": "올해 햅쌀 10kg",
+    "description": "밭에서 말린 곡식으로 직접 도정했습니다. 찰기가 있고 밥맛이 좋아요.",
+    "price": 42000,
+    "emoji": "🌾",
+    "location": "전북 김제시",
+    "stock": 35,
+    "max_guests": null,
+    "created_at": "2025-01-08T00:00:00"
+  },
+  {
+    "id": "seed-hanok-night",
+    "seller_id": "seller-demo-1",
+    "kind": "lodging",
+    "title": "한옥 독채 1박 (2인 기준)",
+    "description": "계곡 뷰 한옥입니다. 조식은 집에서 나온 콩국이나 김치와 함께 드실 수 있어요.",
+    "price": 95000,
+    "emoji": "🏡",
+    "location": "경기 양평군",
+    "stock": null,
+    "max_guests": 4,
+    "created_at": "2025-01-08T00:00:00"
+  },
+  {
+    "id": "seed-honey",
+    "seller_id": "seller-demo-2",
+    "kind": "product",
+    "title": "산청 야생화 꿀 500g",
+    "description": "아들이 도와주는 인터넷 판매입니다. 진한 꿀 맛이 납니다.",
+    "price": 28000,
+    "emoji": "🍯",
+    "location": "경남 산청군",
+    "stock": 12,
+    "max_guests": null,
+    "created_at": "2025-01-08T00:00:00"
+  },
+  {
+    "id": "seed-guesthouse",
+    "seller_id": "seller-demo-2",
+    "kind": "lodging",
+    "title": "바닷가 민박 — 방 2개",
+    "description": "바다 걸어서 3분. 어르신 손님 환영합니다. 현관에 경사로 있어요.",
+    "price": 70000,
+    "emoji": "🌊",
+    "location": "강원 강릉시",
+    "stock": null,
+    "max_guests": 6,
+    "created_at": "2025-01-08T00:00:00"
+  }
+]

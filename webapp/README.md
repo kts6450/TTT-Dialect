@@ -1,72 +1,51 @@
-# Hades — 어르신 음성 체험 예약
+# 로컬링크 (Local Link) — 농어촌 특산품 직거래 마켓
 
-학습된 방언/노인 Whisper + Claude API + React 프론트엔드.
-**음성 + 클릭 병행 Zero UI** 챗봇.
+어르신 **판매자**가 음성·화면으로 **상품·숙박**을 올리고, **구매자**가 같은 목록에서 담아 **가짜 결제(모의)**까지 이어지는 풀스택 데모입니다.  
+음성 비서는 Claude API(`ANTHROPIC_API_KEY`)가 있을 때 전체 대화로 동작합니다. 키가 없어도 **판매자(seller) 모드**는 간단한 한국어 규칙(가격·지역·상품/숙박)으로 Zero UI 데모가 가능합니다.
 
-## 폴더
+## 구조
 
 ```
 webapp/
-├── backend/              # FastAPI (Python)
-│   ├── main.py           # 진입점, .env 자동 로드
+├── backend/                 # FastAPI
+│   ├── main.py
 │   ├── routers/
-│   │   ├── voice.py      # POST /api/voice/turn (multipart audio)
-│   │   ├── catalog.py    # 체험 카탈로그
-│   │   └── reservation.py
+│   │   ├── marketplace.py   # 브랜드, 목록 CRUD
+│   │   ├── orders.py        # 주문 + POST …/mock-pay (가짜 결제)
+│   │   └── voice.py         # /turn?mode=consumer|seller
 │   ├── services/
-│   │   ├── asr.py        # demo/asr.py 재사용 (CUDA→MPS→CPU)
-│   │   ├── llm.py        # Claude API + 시스템 프롬프트(카탈로그 캐싱)
-│   │   ├── tts.py        # gTTS mp3
-│   │   ├── catalog.py
-│   │   └── reservation_store.py
-│   └── data/catalog.json # 시골+도시 mix 10개 체험
-├── frontend/             # Vite + React + TS
-│   └── src/
-│       ├── App.tsx
-│       ├── components/
-│       │   ├── MicButton.tsx        # 거대 마이크 + idle 글로우/녹음 음량 막대/답변 음파
-│       │   ├── Stepper.tsx          # 6단계 진행 막대
-│       │   ├── HelpHints.tsx        # 진행 상황별 예시 발화 힌트
-│       │   ├── ConversationView.tsx # 대화 카드
-│       │   ├── SlotPanel.tsx        # 채워진 슬롯 시각화
-│       │   ├── SlotForm.tsx         # 단계별 클릭 입력 폼 (음성 폴백)
-│       │   ├── CatalogPanel.tsx     # 사이드 카탈로그 (선택 시 황금 강조)
-│       │   ├── ExperienceModal.tsx  # 카드 클릭 → 상세 + "이걸로 예약"
-│       │   ├── ConfirmCard.tsx      # 슬롯 다 채워지면 큰 확인 카드
-│       │   ├── ReceiptCard.tsx      # 예약 완료 영수증
-│       │   ├── FontSizeToggle.tsx   # 보통/크게/특대
-│       │   └── Header.tsx
-│       ├── hooks/
-│       │   └── useVoiceSession.ts   # 마이크 ↔ 백엔드 ↔ TTS 파이프라인
-│       ├── lib/
-│       │   ├── api.ts
-│       │   └── recorder.ts          # WAV 16kHz mono 인코딩 + RMS 콜백
-│       └── store/
-│           └── conversation.ts      # Zustand
-└── README.md (이 파일)
+│   │   ├── llm.py           # 구매/판매 프롬프트 + 슬롯 추출
+│   │   ├── listings_store.py
+│   │   ├── orders_store.py
+│   │   ├── asr.py, tts.py
+│   └── data/
+│       ├── brand.json
+│       ├── listings.seed.json
+│       └── runtime/         # 기본 gitignore — 목록·주문 persistence
+├── frontend/                # Vite + React Router
+│   └── public/logo-local-link.png  # CI 로고
+└── docker/ … Dockerfiles
 ```
 
-## 개발 실행
+## 로컬 실행
 
-### 1. 환경변수 (.env, 프로젝트 루트)
+### 환경변수 (저장소 루트 `.env`)
 
 ```bash
-TTT_ASR_BACKEND=          # 빈 값 = Whisper / "dummy" = 더미 백엔드
-TTT_MODEL_PATH=           # 학습된 체크포인트 경로 (없으면 whisper-small 폴백)
-ANTHROPIC_API_KEY=sk-ant-...
+TTT_ASR_BACKEND=           # dummy = ASR 생략
+TTT_MODEL_PATH=
+ANTHROPIC_API_KEY=sk-ant-… # 전체 음성 도우미(Claude) — 없으면 판매자만 규칙 기반 음성, 구매자는 화면 위주
 ```
 
-`.env`는 git 무시. backend가 시작 시 자동으로 읽음 (python-dotenv).
-
-### 2. 백엔드 (port 8088)
+### 백엔드
 
 ```bash
 cd webapp/backend
 pip install -r requirements.txt
-uvicorn main:app --port 8088 --reload
+uvicorn main:app --host 0.0.0.0 --port 8088 --reload
 ```
 
-### 3. 프론트엔드 (port 5173)
+### 프론트
 
 ```bash
 cd webapp/frontend
@@ -74,53 +53,30 @@ npm install
 npm run dev
 ```
 
-브라우저에서 http://localhost:5173. Vite가 `/api` 호출을 자동으로 백엔드(8088)로 프록시.
+http://localhost:5173 — `/api` 는 Vite 프록시 → 8088.
 
-## 학습 모델 swap
+## Docker
 
-학습된 체크포인트 도착 후:
+저장소 루트:
 
 ```bash
-# .env 수정
-TTT_MODEL_PATH=C:\path\to\checkpoints\combined\best
-TTT_ASR_BACKEND=
+docker compose up --build
 ```
 
-backend 재시작 → `demo/asr.py`의 `_resolve_model_path()`가 검증 후 자동 로드.
+- UI: http://localhost:8080  
+- API: http://localhost:8088/health  
 
-## 시연 흐름
+`webapp/backend/data/runtime` 에 목록·주문 JSON이 쌓입니다. 운영 시엔 볼륨 마운트 또는 DB로 교체하세요.
 
-음성/클릭 둘 다 가능. 둘 중 빠른 쪽으로:
+## 운영 배포 메모
 
-1. **체험 선택** — 사이드 카드 클릭 → 모달 → "이걸로 예약 시작" / 또는 마이크에 "도자기 빚는 거 해보고 싶어요"
-2. **날짜** — "다음 주 토요일" 빠른 버튼 / 또는 "다음 주 토요일에"
-3. **시간** — "오후 2시" 버튼 / 또는 "오후 두 시"
-4. **인원** — +/- 버튼 / 또는 "두 명이서"
-5. **이름** — 텍스트 입력 / 또는 "김영자라고 합니다"
-6. **연락처** — 텍스트 입력 / 또는 "공일공 일이삼사 오륙칠팔"
-7. **확인 카드** 자동 노출 → 큰 "예약 확정" 버튼 / 또는 "네 맞아요"
-8. **영수증 카드** — 예약번호 + 결제 금액 표시
+1. **HTTPS** — 앞단 nginx/caddy 등에서 TLS 종료 후 `proxy_pass` 로 백엔드(8088)·정적(프론트) 연결.
+2. **CORS** — 실제 도메인을 `CORS_EXTRA_ORIGINS=https://your.domain` 로 넘기거나, 같은 오리진으로 nginx만 노출.
+3. **프로세스** — 개발은 uvicorn; 상용은 예:  
+   `gunicorn main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8088` (의존성에 gunicorn 추가 후).
+4. **결제** — 현재 `POST /api/orders/{id}/mock-pay` 는 항상 성공하는 **데모용**입니다. PG 연동 시 이 엔드포인트를 교체하세요.
 
-## 현재 구현
+## 시연 시나리오
 
-- [x] 음성 한 turn (마이크 → ASR → LLM → TTS → 자동 재생)
-- [x] 6단계 진행 막대
-- [x] 진행 상황별 예시 발화 힌트
-- [x] 환영 메시지 자동 + 첫 클릭 시 환영 음성 unlock
-- [x] 마이크 idle 글로우 / 녹음 음량 9개 막대 / 답변 7개 음파
-- [x] 카탈로그 카드 클릭 모달 + 음성 선택 시 자동 강조·스크롤
-- [x] 슬롯 빠른 입력 폼 (체험/날짜/시간/인원/이름/연락처)
-- [x] 모든 슬롯 채워지면 확인 카드 → 예약 자동 생성 → 영수증
-- [x] 글씨 크기 토글 (보통/크게/특대, rem 단위 전체 스케일)
-- [x] TTS 끄기/켜기, 처음부터 리셋
-- [x] Claude 시스템 프롬프트에 카탈로그 ephemeral 캐싱
-- [x] Slot/Intent 추출 (Claude structured output)
-
-## 다음 단계 후보
-
-- [ ] VAD (자동 발화 감지) — 마이크 안 눌러도 끝 자동 감지
-- [ ] AI 답변 인터럽트 — TTS 중 사용자 발화 시 즉시 멈춤
-- [ ] 베이스 vs 학습 모델 A/B 토글 — 시연 핵심 자산
-- [ ] 모바일 반응형 보강
-- [ ] 다국어 (영어 폴백)
-- [ ] 실제 결제 시뮬레이션 단계
+- **구매자:** 쇼핑 탭에서 목록 확인 → 장바구니 → 이름·연락처 → 모의 결제. 또는 마이크로 물건 id·인원·연락처를 말해 한 번에 주문.
+- **판매자:** 판매자 탭에서 마이크 또는 큰 입력 폼으로 상품/숙박 등록 → 목록에 즉시 반영.

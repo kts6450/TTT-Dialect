@@ -1,28 +1,26 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 
 import { api } from "../lib/api";
 import { startRecording } from "../lib/recorder";
-import { useConversation, WELCOME_MESSAGE } from "../store/conversation";
+import { useConversation, WELCOME_SELLER } from "../store/conversation";
 
 /**
- * 마이크 토글 → 백엔드 turn → TTS 자동 재생.
- *
- * 추가 동작:
- * - recording 중 음량(RMS)을 store.micLevel로 흘려보냄
- * - ready_to_confirm 응답 받으면 자동으로 예약 생성 후 store.reservation 갱신
- * - 첫 클릭 시 환영 음성 unlock (자동재생 정책 우회)
+ * 판매자 Zero UI — 음성으로 상품·숙박 등록
  */
 export function useVoiceSession() {
   const stopperRef = useRef<null | (() => Promise<Blob>)>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const welcomePlayedRef = useRef(false);
 
+  useEffect(() => {
+    welcomePlayedRef.current = false;
+    useConversation.getState().setVoiceMode("seller");
+  }, []);
+
   const {
     history,
-    slots,
     phase,
     ttsEnabled,
-    reservation,
     appendUser,
     appendAssistant,
     mergeSlots,
@@ -30,13 +28,14 @@ export function useVoiceSession() {
     setError,
     setMicLevel,
     setReadyToConfirm,
-    setReservation,
+    reset,
+    setListingSubmitted,
   } = useConversation();
 
   const playWelcomeIfNeeded = useCallback(() => {
     if (welcomePlayedRef.current || !ttsEnabled) return;
     welcomePlayedRef.current = true;
-    const url = `/api/voice/tts?text=${encodeURIComponent(WELCOME_MESSAGE)}`;
+    const url = `/api/voice/tts?text=${encodeURIComponent(WELCOME_SELLER)}`;
     playTTS(url, audioRef);
   }, [ttsEnabled]);
 
@@ -61,21 +60,42 @@ export function useVoiceSession() {
       const blob = await stopperRef.current();
       stopperRef.current = null;
 
-      const result = await api.voiceTurn(blob, history);
+      const result = await api.voiceTurn(blob, history, "seller");
 
       if (result.user_text) appendUser(result.user_text);
       appendAssistant(result.reply);
       mergeSlots(result.slots);
       setReadyToConfirm(result.ready_to_confirm);
 
-      // ready_to_confirm 떨어지면 자동 예약 — 슬롯 다 채워졌고 사용자가 "네" 한 시점
-      if (result.ready_to_confirm && !reservation) {
-        try {
-          const merged = { ...slots, ...result.slots };
-          const created = await api.createReservation(merged);
-          setReservation(created);
-        } catch {
-          /* 예약 실패는 화면에서 따로 처리하지 않음 — Claude 답변에 자연스럽게 반영됨 */
+      const merged = useConversation.getState().slots;
+
+      if (result.ready_to_confirm) {
+        const kind = merged.kind === "lodging" ? "lodging" : "product";
+        const title = String(merged.title || "").trim();
+        const price = Number(merged.price);
+        if (title && price >= 0 && (kind === "product" || kind === "lodging")) {
+          try {
+            await api.createListing({
+              kind,
+              title,
+              description: String(merged.description || "").trim(),
+              price: Math.round(price),
+              location: String(merged.location || "").trim(),
+              emoji: merged.emoji ? String(merged.emoji) : undefined,
+              stock: kind === "product" ? (merged.stock != null ? Number(merged.stock) : 99) : null,
+              max_guests:
+                kind === "lodging"
+                  ? merged.max_guests != null
+                    ? Number(merged.max_guests)
+                    : 4
+                  : null,
+            });
+            reset("seller");
+            welcomePlayedRef.current = false;
+            setListingSubmitted(true);
+          } catch {
+            /* */
+          }
         }
       }
 
@@ -91,7 +111,6 @@ export function useVoiceSession() {
     }
   }, [
     history,
-    slots,
     appendUser,
     appendAssistant,
     mergeSlots,
@@ -99,9 +118,9 @@ export function useVoiceSession() {
     setError,
     setMicLevel,
     setReadyToConfirm,
-    setReservation,
+    setListingSubmitted,
     ttsEnabled,
-    reservation,
+    reset,
   ]);
 
   const toggle = useCallback(async () => {
@@ -112,16 +131,10 @@ export function useVoiceSession() {
     }
   }, [phase, begin, finish]);
 
-  return {
-    toggle,
-    phase,
-  };
+  return { toggle, phase };
 }
 
-function playTTS(
-  url: string,
-  ref: React.MutableRefObject<HTMLAudioElement | null>
-) {
+function playTTS(url: string, ref: MutableRefObject<HTMLAudioElement | null>) {
   if (ref.current) {
     ref.current.pause();
   }

@@ -4,16 +4,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Hades 톤 — 짙은 남색 배경 + 따뜻한 황금색 액센트
+        // 로컬링크(Local Link) CI — 그린 프라이머리 + 블루 서브 + 오렌지 포인트
+        brand: {
+          green: "#1B5E20",
+          greenLight: "#2E7D32",
+          blue: "#1976D2",
+          orange: "#EF6C00",
+        },
+        shop: {
+          teal: "#0d9488",
+          tealHover: "#0f766e",
+          tealDark: "#115e59",
+          tealLight: "#ccfbf1",
+          surface: "#f4faf9",
+        },
         hades: {
-          bg: "#0F1A2E",
-          surface: "#162338",
-          gold: "#E8B95A",
-          accent: "#F5C76E",
-          text: "#F4F1EA",
-          muted: "#8FA0BC",
-          danger: "#E57373",
-          ok: "#7CB48F",
+          bg: "#f6faf6",
+          surface: "#ffffff",
+          line: "#e2e8e6",
+          gold: "#1B5E20",
+          accent: "#2E7D32",
+          text: "#1c1917",
+          muted: "#757575",
+          danger: "#dc2626",
+          ok: "#15803d",
         },
       },
       fontFamily: {

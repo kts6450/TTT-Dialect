@@ -9,7 +9,7 @@
     height: 100%;
   }
   body {
-    background: linear-gradient(180deg, #0a1322 0%, #0f1a2e 100%);
+    background: theme("colors.hades.bg");
     color: theme("colors.hades.text");
     font-family: theme("fontFamily.sans");
     font-feature-settings: "ss06" on;
@@ -19,14 +19,22 @@
 
 @layer components {
   .card {
-    @apply bg-hades-surface/80 border border-white/5 rounded-2xl shadow-lg;
+    @apply bg-hades-surface border border-hades-line rounded-2xl shadow-sm shadow-slate-200/60;
   }
   .btn-primary {
-    @apply bg-hades-gold text-hades-bg font-bold rounded-xl px-6 py-3
-           hover:bg-hades-accent transition-colors disabled:opacity-50;
+    @apply bg-hades-gold text-white font-bold rounded-xl px-6 py-3
+           hover:bg-hades-accent transition-colors disabled:opacity-50 shadow-sm;
   }
   .btn-ghost {
-    @apply text-hades-muted hover:text-hades-text border border-white/10
-           rounded-xl px-4 py-2 transition-colors;
+    @apply text-hades-muted hover:text-hades-text border border-hades-line bg-white
+           rounded-xl px-4 py-2 transition-colors hover:bg-slate-50;
+  }
+  .btn-shop {
+    @apply bg-shop-teal text-white font-bold rounded-xl px-6 py-3 shadow-md
+           hover:bg-shop-tealHover transition-colors disabled:opacity-50;
+  }
+  .btn-shop-outline {
+    @apply border-2 border-shop-teal text-shop-tealDark font-bold rounded-xl px-6 py-3
+           bg-white hover:bg-shop-tealLight transition-colors disabled:opacity-50;
   }
 }

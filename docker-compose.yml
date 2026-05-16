@@ -1,48 +1,42 @@
-# TTT-Dialect 데모 — 키오스크 + 챗봇
+# 로컬링크 — FastAPI (8088) + React + nginx (8080)
 #
-# 처음 실행 (모델 도착 전):
-#   set TTT_ASR_BACKEND=dummy
+#   export ANTHROPIC_API_KEY=sk-ant-...   # LLM 사용 시 (선택)
+#   export TTT_ASR_BACKEND=dummy          # ASR 더미로 빠른 UI 확인 (선택)
 #   docker compose up --build
 #
-# 모델 도착 후:
-#   set TTT_MODEL_DIR=C:\path\to\checkpoints\combined\best
-#   set ANTHROPIC_API_KEY=sk-ant-...
-#   (TTT_ASR_BACKEND 환경변수 unset)
-#   docker compose up
-#
-# 접속:
-#   키오스크 → http://localhost:8501
-#   챗봇    → http://localhost:8502
+# 접속: http://localhost:8080  (/api 는 nginx → 백엔드)
+# 헬스: http://localhost:8088/health
+# 목록·주문 JSON: 볼륨 marketplace-data → backend/data/runtime
 
 services:
-  kiosk:
-    build: .
-    image: ttt-demo:latest
-    container_name: ttt-kiosk
-    command: streamlit run demo/app_kiosk.py --server.port=8501 --server.fileWatcherType=none
+  hades-backend:
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile.backend
+    image: ttt-hades-backend:latest
+    container_name: ttt-hades-backend
     ports:
-      - "8501:8501"
-    environment:
-      TTT_ASR_BACKEND: ${TTT_ASR_BACKEND:-}
-      TTT_MODEL_PATH: ${TTT_MODEL_PATH:-/models}
-    volumes:
-      # 모델 디렉토리를 컨테이너의 /models로 마운트 (read-only).
-      # 미설정 시 빈 디렉토리 마운트 — DummyASR 또는 whisper-small 폴백 동작.
-      - ${TTT_MODEL_DIR:-./.docker_empty_models}:/models:ro
-    restart: unless-stopped
-
-  chatbot:
-    image: ttt-demo:latest      # kiosk가 빌드한 이미지를 재사용 (build 중복 방지)
-    container_name: ttt-chatbot
-    command: streamlit run demo/app_chatbot.py --server.port=8501 --server.fileWatcherType=none
-    depends_on:
-      - kiosk                   # kiosk service가 먼저 빌드되도록
-    ports:
-      - "8502:8501"
+      - "8088:8088"
     environment:
       TTT_ASR_BACKEND: ${TTT_ASR_BACKEND:-}
       TTT_MODEL_PATH: ${TTT_MODEL_PATH:-/models}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - ${TTT_MODEL_DIR:-./.docker_empty_models}:/models:ro
+      - marketplace-data:/app/webapp/backend/data/runtime
     restart: unless-stopped
+
+  hades-web:
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile.frontend
+    image: ttt-hades-web:latest
+    container_name: ttt-hades-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - hades-backend
+    restart: unless-stopped
+
+volumes:
+  marketplace-data:

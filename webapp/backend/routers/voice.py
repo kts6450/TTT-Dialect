@@ -22,7 +22,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from services.asr import asr_backend_label, transcribe_audio_bytes
-from services.llm import chat_turn, is_configured as llm_configured
+from services.llm import chat_turn_for_mode, is_configured as llm_configured
 from services.tts import synthesize_mp3
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
@@ -41,6 +41,7 @@ def status():
 async def turn(
     audio: UploadFile = File(...),
     history: str = Form("[]"),
+    mode: str = Form("consumer"),
 ):
     audio_bytes = await audio.read()
     if not audio_bytes:
@@ -69,7 +70,7 @@ async def turn(
             "tts_url": _tts_url("죄송합니다. 잘 못 들었어요. 다시 한번 말씀해 주시겠어요?"),
         }
 
-    result = chat_turn(user_text, history_list)
+    result = chat_turn_for_mode(user_text, history_list, mode)
     result["user_text"] = user_text
     result["tts_url"] = _tts_url(result["reply"])
     return result
@@ -82,7 +83,9 @@ async def text_turn(body: dict):
     history = body.get("history") or []
     if not user_text:
         raise HTTPException(status_code=400, detail="user_text required")
-    result = chat_turn(user_text, history)
+    mode_raw = body.get("mode") or "consumer"
+    mode = mode_raw if mode_raw in ("consumer", "seller") else "consumer"
+    result = chat_turn_for_mode(user_text, history, mode)
     result["user_text"] = user_text
     result["tts_url"] = _tts_url(result["reply"])
     return result
