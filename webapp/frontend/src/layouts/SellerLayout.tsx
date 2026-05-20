@@ -1,42 +1,101 @@
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
+import { RequireRole } from "../components/RequireRole";
 import { FontSizeToggle } from "../components/FontSizeToggle";
+import { categoryLabel } from "../lib/sellerSectors";
+import {
+  useAuth,
+  useAuthDisplayName,
+  useAuthRole,
+  useAuthSellerSector,
+} from "../store/auth";
 
-/**
- * 판매자 전용 — 로고 그린 톤 + Zero UI(음성) 중심. 소비자 쇼핑과 레이아웃 분리.
- */
+const tab =
+  "px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap";
+const tabOn = `${tab} bg-shop-teal text-white shadow-sm`;
+const tabOff = `${tab} text-hades-muted hover:bg-shop-tealLight hover:text-shop-tealDark`;
+
 export function SellerLayout() {
+  const displayName = useAuthDisplayName();
+  const logout = useAuth((s) => s.logout);
+  const sellerSector = useAuthSellerSector();
+  const role = useAuthRole();
+
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50/80 via-white to-slate-50">
-      <header className="sticky top-0 z-40 border-b border-emerald-200/60 bg-white/95 backdrop-blur-md shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo-local-link.png"
-              alt="로컬링크 판매자"
-              className="h-10 sm:h-11 w-auto max-w-[200px] object-contain"
-            />
-            <span className="hidden sm:inline text-sm font-bold text-brand-green border border-brand-green/30 rounded-full px-3 py-1 bg-emerald-50">
-              판매자 스튜디오
-            </span>
+    <RequireRole role="seller">
+      <div className="min-h-screen flex flex-col bg-brand-cream">
+        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-lg border-b border-brand-line">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src="/logo-local-link.png"
+                alt="로컬링크"
+                className="h-9 sm:h-10 w-auto object-contain shrink-0"
+              />
+              <span className="text-xs font-bold text-shop-tealDark bg-shop-tealLight px-2.5 py-1 rounded-full shrink-0">
+                {role === "master" ? "운영자" : `셀러 · ${categoryLabel(sellerSector ?? "rural")}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-hades-muted hidden sm:inline">{displayName}님</span>
+              <Link
+                to="/"
+                className="font-semibold text-shop-tealDark hover:underline underline-offset-4"
+              >
+                쇼핑몰 보기
+              </Link>
+              <button
+                type="button"
+                className="text-hades-muted hover:text-hades-text"
+                onClick={() => {
+                  logout();
+                  window.location.href = "/login?role=seller";
+                }}
+              >
+                나가기
+              </button>
+              <FontSizeToggle variant="seller" />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/"
-              className="text-sm sm:text-base font-semibold text-shop-teal hover:text-shop-tealDark underline-offset-4 hover:underline"
+          <nav className="max-w-5xl mx-auto px-4 sm:px-6 pb-3 flex gap-2 overflow-x-auto">
+            <NavLink
+              to="/seller/dashboard"
+              className={({ isActive }) => (isActive ? tabOn : tabOff)}
             >
-              쇼핑몰 보기 →
-            </Link>
-            <FontSizeToggle variant="seller" />
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <Outlet />
-      </main>
-      <footer className="border-t border-emerald-100 bg-white/80 py-4 text-center text-xs text-slate-600">
-        로컬링크 판매자 · 말씀만으로도 상품·숙박을 올릴 수 있어요
-      </footer>
-    </div>
+              대시보드
+            </NavLink>
+            <NavLink
+              to="/seller/products"
+              className={({ isActive }) => (isActive ? tabOn : tabOff)}
+            >
+              상품 등록
+            </NavLink>
+            <NavLink to="/seller/sns" className={({ isActive }) => (isActive ? tabOn : tabOff)}>
+              SNS 홍보
+            </NavLink>
+            <NavLink
+              to="/seller/orders"
+              className={({ isActive }) => (isActive ? tabOn : tabOff)}
+            >
+              주문 · 알림
+            </NavLink>
+            {role === "master" ? (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) => (isActive ? tabOn : tabOff)}
+              >
+                어드민
+              </NavLink>
+            ) : null}
+          </nav>
+        </header>
+        <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <Outlet />
+        </main>
+        <footer className="border-t border-brand-line bg-white py-6 text-center text-sm text-hades-muted">
+          등록한 상품은 소비자 쇼핑몰에 바로 반영됩니다
+        </footer>
+      </div>
+    </RequireRole>
   );
 }

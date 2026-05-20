@@ -21,7 +21,7 @@ import urllib.parse
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from services.asr import asr_backend_label, transcribe_audio_bytes
+from services.asr import asr_status_detail, transcribe_audio_bytes
 from services.llm import chat_turn_for_mode, is_configured as llm_configured
 from services.tts import synthesize_mp3
 
@@ -31,8 +31,11 @@ router = APIRouter(prefix="/api/voice", tags=["voice"])
 @router.get("/status")
 def status():
     """프론트 부팅 시 시스템 상태 표시용."""
+    detail = asr_status_detail()
     return {
-        "asr_backend": asr_backend_label(),
+        **detail,
+        # 하위 호환: 기존 필드명 유지
+        "asr_backend": detail["asr_backend_class"],
         "llm_configured": llm_configured(),
     }
 

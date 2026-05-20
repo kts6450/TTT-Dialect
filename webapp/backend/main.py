@@ -12,6 +12,7 @@ TTT_ASR_BACKEND, TTT_MODEL_PATH 등). 환경변수가 이미 셸에 있으면
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,9 +22,18 @@ from fastapi.middleware.cors import CORSMiddleware
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
-from routers import marketplace, orders, voice  # noqa: E402
+from routers import admin, auth, marketplace, orders, reviews, seller_dashboard, voice  # noqa: E402
 
-app = FastAPI(title="로컬링크 Local Link — API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    from db.bootstrap import init_database
+
+    init_database()
+    yield
+
+
+app = FastAPI(title="로컬링크 Local Link — API", lifespan=lifespan)
 
 _default_cors = [
     "http://localhost:5173",
@@ -47,7 +57,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(marketplace.router)
+app.include_router(reviews.router)
+app.include_router(seller_dashboard.router)
 app.include_router(orders.router)
 app.include_router(voice.router)
 

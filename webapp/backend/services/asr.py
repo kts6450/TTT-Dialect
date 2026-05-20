@@ -18,7 +18,11 @@ _DEMO_DIR = Path(__file__).resolve().parent.parent.parent.parent / "demo"
 if str(_DEMO_DIR) not in sys.path:
     sys.path.insert(0, str(_DEMO_DIR))
 
-from asr import TARGET_SR, get_asr  # noqa: E402  type: ignore
+from asr import (  # noqa: E402  type: ignore
+    TARGET_SR,
+    describe_asr_for_status,
+    get_asr,
+)
 
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
@@ -43,5 +47,9 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
 
 def asr_backend_label() -> str:
     """현재 ASR 백엔드 식별자 (UI 표시용)."""
-    asr = get_asr()
-    return type(asr).__name__
+    return describe_asr_for_status()["asr_backend_class"]
+
+
+def asr_status_detail() -> dict:
+    """GET /api/voice/status 등에 붙일 ASR 메타데이터."""
+    return describe_asr_for_status()

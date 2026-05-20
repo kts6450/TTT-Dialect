@@ -1,7 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { ListingLocalGuide } from "../components/ListingLocalGuide";
+import {
+  ListingInfoSections,
+  ListingUsageGuideSections,
+} from "../components/ListingPackageSections";
+import { ReviewSection } from "../components/ReviewSection";
 import { useListingDetailPoll } from "../hooks/useListingDetailPoll";
+import { api } from "../lib/api";
+import {
+  listingCoverPhoto,
+  listingDemoViewCount,
+} from "../lib/listingDisplay";
 import { useCart } from "../store/cart";
 
 type TabId = "info" | "guide" | "reviews";
@@ -14,14 +25,25 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
 }
 
-/** 간단 월 달력 — 숙박 예약 느낌용 UI */
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 월 달력 — 예약된 날짜(회색·비활성), 체크인/체크아웃 범위 강조 */
 function MonthCalendar({
   month,
-  selected,
+  checkIn,
+  checkOut,
+  bookedDates,
   onSelect,
 }: {
   month: Date;
-  selected: Date | null;
+  checkIn: Date | null;
+  checkOut: Date | null;
+  bookedDates: Set<string>;
   onSelect: (d: Date) => void;
 }) {
   const y = month.getFullYear();
@@ -32,11 +54,14 @@ function MonthCalendar({
   for (let i = 0; i < first; i++) cells.push(null);
   for (let d = 1; d <= total; d++) cells.push(d);
 
-  const isSameDay = (a: Date | null, day: number) =>
-    a &&
-    a.getFullYear() === y &&
-    a.getMonth() === m &&
-    a.getDate() === day;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const inRange = (day: number) => {
+    if (!checkIn || !checkOut) return false;
+    const d = new Date(y, m, day);
+    return d > checkIn && d < checkOut;
+  };
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -49,28 +74,49 @@ function MonthCalendar({
         ))}
       </div>
       <div className="grid grid-cols-7 gap-1">
-        {cells.map((day, idx) =>
-          day == null ? (
-            <span key={`e-${idx}`} className="h-9" />
-          ) : (
+        {cells.map((day, idx) => {
+          if (day == null) return <span key={`e-${idx}`} className="h-9" />;
+          const d = new Date(y, m, day);
+          const iso = toIsoDate(d);
+          const past = d < today;
+          const booked = bookedDates.has(iso);
+          const isCheckIn = checkIn && toIsoDate(checkIn) === iso;
+          const isCheckOut = checkOut && toIsoDate(checkOut) === iso;
+          const middle = inRange(day);
+          const disabled = past || booked;
+          const cls = [
+            "h-9 rounded-lg text-sm font-semibold transition-colors",
+            isCheckIn || isCheckOut
+              ? "bg-shop-teal text-white shadow"
+              : middle
+                ? "bg-shop-tealLight text-shop-tealDark"
+                : booked
+                  ? "bg-slate-200 text-slate-400 line-through cursor-not-allowed"
+                  : past
+                    ? "text-slate-300 cursor-not-allowed"
+                    : "text-slate-700 hover:bg-shop-tealLight",
+          ].join(" ");
+          return (
             <button
               key={day}
               type="button"
-              onClick={() => onSelect(new Date(y, m, day))}
-              className={[
-                "h-9 rounded-lg text-sm font-semibold transition-colors",
-                isSameDay(selected, day)
-                  ? "bg-shop-teal text-white shadow"
-                  : "text-slate-700 hover:bg-shop-tealLight",
-              ].join(" ")}
+              disabled={disabled}
+              onClick={() => onSelect(d)}
+              className={cls}
+              title={booked ? "예약 완료" : ""}
             >
               {day}
             </button>
-          )
-        )}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function diffDays(a: Date, b: Date): number {
+  const ms = b.getTime() - a.getTime();
+  return Math.max(1, Math.round(ms / 86_400_000));
 }
 
 export function ListingDetailPage() {
@@ -81,11 +127,28 @@ export function ListingDetailPage() {
   const [qty, setQty] = useState(1);
   const [guests, setGuests] = useState(2);
   const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
-  const [selectedDate, setSelectedDate] = useState<Date | null>(() => {
-    const t = new Date();
-    t.setDate(t.getDate() + 1);
-    return t;
+  const [checkIn, setCheckIn] = useState<Date | null>(null);
+  const [checkOut, setCheckOut] = useState<Date | null>(null);
+  const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
+  const [reviewSummary, setReviewSummary] = useState<{ count: number; average: number }>({
+    count: 0,
+    average: 0,
   });
+  const [photoIndex, setPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    if (!listing) return;
+    if (listing.kind === "lodging") {
+      void api
+        .getListingBookings(listing.id)
+        .then((r) => setBookedDates(new Set(r.booked_dates)))
+        .catch(() => setBookedDates(new Set()));
+    }
+    void api
+      .getReviews(listing.id)
+      .then((r) => setReviewSummary({ count: r.count, average: r.average }))
+      .catch(() => setReviewSummary({ count: 0, average: 0 }));
+  }, [listing]);
 
   const maxGuests = listing?.max_guests ?? 8;
 
@@ -93,21 +156,23 @@ export function ListingDetailPage() {
     [
       "flex-1 py-3 text-center font-semibold border-b-2 transition-colors text-sm sm:text-base",
       tab === t
-        ? "border-shop-teal text-shop-tealDark"
-        : "border-transparent text-slate-500 hover:text-slate-800",
+        ? "border-shop-teal text-shop-tealDark bg-shop-tealLight/30"
+        : "border-transparent text-hades-muted hover:text-hades-text",
     ].join(" ");
 
-  const usageGuide = useMemo(() => {
-    if (!listing) return "";
-    if (listing.kind === "lodging") {
-      return `체크인·체크아웃 시간은 판매자와 조율합니다. 인원은 최대 ${listing.max_guests ?? "—"}명 기준입니다. (데모: 실제 예약 확정은 연결되어 있지 않습니다.)`;
-    }
-    return "배송·픽업은 판매자와 직거래로 진행됩니다. 재고는 데모용이며, 결제 후에도 자동 차감되지 않을 수 있습니다.";
+  const photoList = useMemo(() => {
+    if (!listing) return [] as string[];
+    const cover = listingCoverPhoto(listing);
+    const extras = (listing.photos ?? []).map((p) => p.url);
+    return [cover, ...extras];
   }, [listing]);
 
   if (loading && !listing) {
     return (
-      <p className="text-center text-slate-500 py-20 text-lg">불러오는 중…</p>
+      <div className="py-20 flex flex-col items-center gap-3 text-slate-500">
+        <span className="inline-block h-10 w-10 rounded-full border-2 border-shop-teal border-t-transparent animate-spin" />
+        <p className="text-lg">불러오는 중…</p>
+      </div>
     );
   }
 
@@ -123,24 +188,144 @@ export function ListingDetailPage() {
   }
 
   const isLodging = listing.kind === "lodging";
+  const photo = photoList[photoIndex] ?? listingCoverPhoto(listing);
+  const views = listingDemoViewCount(listing.id);
+  const areaLabel = listing.kind === "product" ? "특산·상품" : "숙박·민박";
+
+  const ratingDisplay = reviewSummary.count > 0 ? reviewSummary.average.toFixed(1) : "—";
+
+  const handleCalendarPick = (d: Date) => {
+    if (!checkIn || (checkIn && checkOut)) {
+      setCheckIn(d);
+      setCheckOut(null);
+      return;
+    }
+    if (d <= checkIn) {
+      setCheckIn(d);
+      return;
+    }
+    // 사이 날짜 중 예약된 곳이 있으면 거부
+    const cur = new Date(checkIn);
+    while (cur < d) {
+      cur.setDate(cur.getDate() + 1);
+      if (bookedDates.has(toIsoDate(cur))) {
+        alert("선택한 범위에 이미 예약된 날짜가 있습니다.");
+        return;
+      }
+    }
+    setCheckOut(d);
+  };
+
+  const addLodgingToCart = () => {
+    if (!checkIn || !checkOut) {
+      alert("체크인·체크아웃 날짜를 선택해 주세요.");
+      return;
+    }
+    add(listing.id, Math.max(1, guests), {
+      stay_start: toIsoDate(checkIn),
+      stay_end: toIsoDate(checkOut),
+    });
+  };
+
+  const nights = checkIn && checkOut ? diffDays(checkIn, checkOut) : 0;
 
   return (
     <div className="space-y-6">
-      <nav className="text-sm text-slate-500">
-        <Link to="/" className="text-shop-teal hover:underline">
+      <nav className="text-sm text-slate-500 flex flex-wrap items-center gap-2">
+        <Link to="/" className="text-shop-teal hover:underline font-medium">
           홈
         </Link>
-        <span className="mx-2">/</span>
-        <span className="text-slate-800">{listing.title}</span>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-600">{areaLabel}</span>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-800 font-medium line-clamp-1">{listing.title}</span>
       </nav>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 lg:gap-10 items-start">
         <div>
-          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-shop-tealLight/40 to-white aspect-[4/3] flex items-center justify-center text-[6rem] sm:text-[8rem] shadow-inner">
-            {listing.emoji}
+          <div className="relative rounded-3xl border border-slate-200/90 overflow-hidden shadow-xl bg-slate-900">
+            <div className="relative aspect-[4/3] sm:aspect-[16/10]">
+              <img
+                src={photo}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-900/25" />
+            </div>
+            <div className="absolute top-4 left-4 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-slate-800 shadow">
+                {listing.location}
+              </span>
+              <span className="rounded-full bg-black/45 text-white px-3 py-1 text-xs font-semibold backdrop-blur-md">
+                {areaLabel}
+              </span>
+              <span
+                className="rounded-full bg-white/90 w-9 h-9 flex items-center justify-center text-lg shadow"
+                aria-hidden
+              >
+                {listing.emoji}
+              </span>
+            </div>
+            {photoList.length > 1 && (
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">
+                {photoList.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setPhotoIndex(i)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === photoIndex ? "w-7 bg-white" : "w-1.5 bg-white/60"
+                    }`}
+                    aria-label={`${i + 1}번째 사진`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="mt-2 flex border-b border-slate-200">
+          {photoList.length > 1 && (
+            <ul className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {photoList.map((src, i) => (
+                <li key={`${src}-${i}`} className="shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPhotoIndex(i)}
+                    className={`block w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors ${
+                      i === photoIndex ? "border-shop-teal" : "border-transparent"
+                    }`}
+                  >
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="flex flex-wrap items-center gap-3 text-slate-600">
+              <span className="font-semibold text-amber-600 tabular-nums">★ {ratingDisplay}</span>
+              <span className="text-slate-400">·</span>
+              <button
+                type="button"
+                className="text-shop-tealDark font-medium hover:underline"
+                onClick={() => setTab("reviews")}
+              >
+                리뷰 {reviewSummary.count}
+              </button>
+              <span className="text-slate-400">·</span>
+              <span className="text-slate-500 tabular-nums">조회 {views.toLocaleString()}</span>
+            </div>
+            <button
+              type="button"
+              className="text-slate-400 hover:text-slate-600 text-sm"
+              title="준비 중"
+              disabled
+            >
+              공유
+            </button>
+          </div>
+
+          <div className="mt-2 flex border border-brand-line bg-white rounded-t-xl overflow-hidden">
             <button type="button" className={tabCls("info")} onClick={() => setTab("info")}>
               상품 정보
             </button>
@@ -148,41 +333,54 @@ export function ListingDetailPage() {
               이용 안내
             </button>
             <button type="button" className={tabCls("reviews")} onClick={() => setTab("reviews")}>
-              후기 (0)
+              리뷰 {reviewSummary.count > 0 ? `(${reviewSummary.count})` : ""}
             </button>
           </div>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-4 bg-white rounded-b-xl">
             {tab === "info" && (
               <>
-                <p className="text-sm text-shop-tealDark font-semibold">
-                  {listing.kind === "product" ? "특산·상품" : "숙박"} · {listing.location}
+                <p className="text-sm font-semibold text-shop-tealDark">
+                  {areaLabel} · {listing.location}
                 </p>
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug">
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug tracking-tight">
                   {listing.title}
                 </h1>
-                <p className="text-3xl font-bold text-shop-tealDark">
-                  {listing.price.toLocaleString()}원
+                <p className="text-3xl sm:text-4xl font-bold text-shop-tealDark tabular-nums">
+                  {listing.price.toLocaleString()}
+                  <span className="text-2xl font-bold">원</span>
                   {isLodging && (
-                    <span className="text-lg font-semibold text-slate-500"> / 1박 기준</span>
+                    <span className="text-lg sm:text-xl font-semibold text-slate-500">
+                      {" "}
+                      / 1박 기준
+                    </span>
                   )}
                 </p>
-                <p className="text-slate-700 text-lg leading-relaxed whitespace-pre-wrap">
-                  {listing.description || "상세 설명이 곧 추가됩니다."}
-                </p>
+                <ListingInfoSections listing={listing} />
               </>
             )}
             {tab === "guide" && (
-              <p className="text-slate-700 text-lg leading-relaxed">{usageGuide}</p>
+              <div className="space-y-8">
+                <ListingUsageGuideSections guide={listing.guide} />
+                <ListingLocalGuide listing={listing} />
+              </div>
             )}
-            {tab === "reviews" && (
-              <p className="text-slate-500 text-lg">아직 등록된 후기가 없습니다.</p>
-            )}
+            {tab === "reviews" && <ReviewSection listingId={listing.id} />}
           </div>
         </div>
 
-        <aside className="lg:sticky lg:top-24 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg space-y-5">
-          <h2 className="text-lg font-bold text-slate-900 sr-only">예약·구매</h2>
+        <aside className="lg:sticky lg:top-24 rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xl shadow-slate-200/50 space-y-5">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-4">
+            <p className="text-sm font-semibold text-slate-800">예약 · 구매</p>
+            <button
+              type="button"
+              disabled
+              className="text-sm text-slate-400 cursor-not-allowed"
+              title="찜하기는 준비 중"
+            >
+              ♡ 찜
+            </button>
+          </div>
 
           {isLodging ? (
             <>
@@ -212,11 +410,28 @@ export function ListingDetailPage() {
               </div>
               <MonthCalendar
                 month={monthCursor}
-                selected={selectedDate}
-                onSelect={setSelectedDate}
+                checkIn={checkIn}
+                checkOut={checkOut}
+                bookedDates={bookedDates}
+                onSelect={handleCalendarPick}
               />
-              <p className="text-xs text-slate-500">
-                날짜는 데모용 표시입니다. 실제 예약 확정은 장바구니·결제 플로우와 별도입니다.
+              <div className="text-sm rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-1">
+                <p>
+                  체크인:{" "}
+                  <strong>{checkIn ? toIsoDate(checkIn) : "선택"}</strong>
+                </p>
+                <p>
+                  체크아웃:{" "}
+                  <strong>{checkOut ? toIsoDate(checkOut) : "선택"}</strong>
+                </p>
+                {nights > 0 && (
+                  <p className="text-shop-tealDark font-bold">
+                    {nights}박 · {(listing.price * nights).toLocaleString()}원
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 leading-snug">
+                회색 날짜는 이미 예약되었습니다. 첫 클릭이 체크인, 두 번째 클릭이 체크아웃입니다.
               </p>
 
               <div>
@@ -239,16 +454,16 @@ export function ListingDetailPage() {
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  유아·어린이 포함 인원으로 선택해 주세요. 최대 {maxGuests}명.
+                  최대 {maxGuests}명까지 가능합니다.
                 </p>
               </div>
 
               <button
                 type="button"
-                className="btn-shop w-full text-lg py-4"
-                onClick={() => add(listing.id, Math.max(1, guests))}
+                className="btn-shop w-full text-lg py-4 rounded-xl"
+                onClick={addLodgingToCart}
               >
-                예약하기 (장바구니 담기)
+                예약하기
               </button>
             </>
           ) : (
@@ -273,12 +488,12 @@ export function ListingDetailPage() {
                   </button>
                 </div>
                 {listing.stock != null && (
-                  <p className="text-xs text-slate-500 mt-2">(데모 재고 {listing.stock})</p>
+                  <p className="text-xs text-slate-500 mt-2">현재 수량 {listing.stock}</p>
                 )}
               </div>
               <button
                 type="button"
-                className="btn-shop w-full text-lg py-4"
+                className="btn-shop w-full text-lg py-4 rounded-xl"
                 onClick={() => add(listing.id, qty)}
               >
                 장바구니에 담기
@@ -288,9 +503,9 @@ export function ListingDetailPage() {
 
           <Link
             to="/checkout"
-            className="block text-center btn-shop-outline py-3 no-underline w-full"
+            className="block text-center btn-shop-outline py-3 no-underline w-full rounded-xl"
           >
-            장바구니 바로 가기
+            장바구니로 이동
           </Link>
         </aside>
       </div>

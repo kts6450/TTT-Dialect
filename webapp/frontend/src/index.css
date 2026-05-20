@@ -9,32 +9,58 @@
     height: 100%;
   }
   body {
-    background: theme("colors.hades.bg");
+    background: theme("colors.brand.cream");
     color: theme("colors.hades.text");
     font-family: theme("fontFamily.sans");
-    font-feature-settings: "ss06" on;
     -webkit-font-smoothing: antialiased;
   }
 }
 
 @layer components {
   .card {
-    @apply bg-hades-surface border border-hades-line rounded-2xl shadow-sm shadow-slate-200/60;
+    @apply bg-white border border-hades-line rounded-2xl shadow-card;
   }
+
+  .input-field {
+    @apply w-full rounded-xl border border-hades-line bg-white px-4 py-3 text-base
+           text-hades-text placeholder:text-slate-400
+           focus:outline-none focus:ring-2 focus:ring-shop-teal/25 focus:border-shop-teal;
+  }
+
   .btn-primary {
-    @apply bg-hades-gold text-white font-bold rounded-xl px-6 py-3
-           hover:bg-hades-accent transition-colors disabled:opacity-50 shadow-sm;
+    @apply bg-shop-teal text-white font-bold rounded-xl px-6 py-3
+           hover:bg-shop-tealHover transition-colors disabled:opacity-50 shadow-sm;
   }
+
   .btn-ghost {
     @apply text-hades-muted hover:text-hades-text border border-hades-line bg-white
-           rounded-xl px-4 py-2 transition-colors hover:bg-slate-50;
+           rounded-xl px-4 py-2.5 font-semibold transition-colors hover:bg-hades-bg;
   }
+
   .btn-shop {
-    @apply bg-shop-teal text-white font-bold rounded-xl px-6 py-3 shadow-md
+    @apply bg-shop-teal text-white font-bold rounded-xl px-6 py-3 shadow-sm
            hover:bg-shop-tealHover transition-colors disabled:opacity-50;
   }
+
   .btn-shop-outline {
     @apply border-2 border-shop-teal text-shop-tealDark font-bold rounded-xl px-6 py-3
            bg-white hover:bg-shop-tealLight transition-colors disabled:opacity-50;
+  }
+
+  .chip {
+    @apply px-4 py-2 rounded-full text-sm font-semibold border border-hades-line
+           bg-white text-slate-700 transition-colors hover:border-shop-teal/40;
+  }
+
+  .chip-active {
+    @apply chip bg-shop-teal border-shop-teal text-white shadow-sm hover:border-shop-teal;
+  }
+
+  .page-title {
+    @apply text-2xl sm:text-3xl font-bold text-hades-text tracking-tight;
+  }
+
+  .page-lead {
+    @apply mt-2 text-hades-muted leading-relaxed max-w-2xl;
   }
 }

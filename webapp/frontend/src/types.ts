@@ -1,3 +1,14 @@
+export type UserRole = "consumer" | "seller" | "master";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  display_name: string;
+  seller_sector: string | null;
+  seller_id: string | null;
+}
+
 export type Role = "user" | "assistant";
 
 export interface Turn {
@@ -36,9 +47,52 @@ export interface VoiceTurnResponse {
   tts_url: string;
 }
 
+export type ListingCategory =
+  | "experience"
+  | "rural"
+  | "fishing"
+  | "craft"
+  | "leisure"
+  | "lodging";
+
+export interface ListingGuideStep {
+  time?: string;
+  title: string;
+  body: string;
+}
+
+export interface ListingGuideSpot {
+  name: string;
+  address?: string;
+  hours?: string;
+  holiday?: string;
+  parking?: string;
+}
+
+/** 루플형 상품 상세 — 이용안내·체험 STEP */
+export interface ListingGuide {
+  highlights?: string[];
+  steps?: ListingGuideStep[];
+  included?: string[];
+  not_included?: string[];
+  precautions?: string[];
+  refund_policy?: string;
+  meeting_place?: string;
+  address?: string;
+  nearby?: ListingGuideSpot[];
+}
+
+export interface ListingPhoto {
+  id: string;
+  url: string;
+  sort_order: number;
+  created_at?: string;
+}
+
 export interface Listing {
   id: string;
   seller_id: string;
+  category?: ListingCategory;
   kind: "product" | "lodging";
   title: string;
   description: string;
@@ -48,6 +102,9 @@ export interface Listing {
   stock: number | null;
   max_guests: number | null;
   created_at: string;
+  cover_image_url?: string | null;
+  guide?: ListingGuide | null;
+  photos?: ListingPhoto[];
 }
 
 export interface Brand {
@@ -60,34 +117,57 @@ export interface Brand {
 export interface VoiceStatus {
   asr_backend: string;
   llm_configured: boolean;
+  asr_backend_class?: string;
+  asr_is_dummy?: boolean;
+  env_ttt_asr_backend?: string;
+  env_ttt_model_path?: string;
+  model_requested?: string | null;
+  model_resolved_before_load?: string;
+  model_loaded_path?: string | null;
+  device?: string | null;
+  local_whisper_checkpoint_ok?: boolean | null;
+  using_openai_whisper_small_fallback?: boolean;
 }
 
 export interface CartLine {
   listingId: string;
   quantity: number;
+  stay_start?: string | null;
+  stay_end?: string | null;
 }
 
-export interface OrderLine {
+export interface OrderItem {
   listing_id: string;
   title: string;
-  kind: string;
   quantity: number;
   unit_price: number;
-  line_total: number;
 }
+
+export type FulfillmentStatus =
+  | "pending"
+  | "preparing"
+  | "shipping"
+  | "completed"
+  | "cancelled";
 
 export interface Order {
   id: string;
   created_at: string;
+  buyer_id?: string | null;
   buyer_name: string;
   buyer_phone: string;
-  items: OrderLine[];
+  items: OrderItem[];
   total: number;
   payment_status: string;
-  payment: {
-    method: string;
-    transaction_id: string;
-    paid_at: string;
-    message: string;
-  } | null;
+  fulfillment_status: FulfillmentStatus;
+  stay_start?: string | null;
+  stay_end?: string | null;
+  payment?: { transaction_id?: string } | null;
+}
+
+export interface FeatureFlagItem {
+  id: string;
+  enabled: boolean;
+  label: string;
+  message: string;
 }

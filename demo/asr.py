@@ -166,3 +166,79 @@ def get_asr() -> ASRBackend:
     if backend == "dummy":
         return DummyASR()
     return WhisperASR()
+
+
+def _effective_model_raw_from_env() -> str:
+    """WhisperASR.__init__ 과 동일한 기본값 규칙."""
+    return (os.environ.get("TTT_MODEL_PATH") or "").strip() or DEFAULT_MODEL
+
+
+def describe_asr_for_status() -> dict:
+    """헬스/상태 API용 — 이미 get_asr()를 호출하는 프로세스라면 부하 동일."""
+    backend_env = (os.environ.get("TTT_ASR_BACKEND") or "whisper").lower()
+    env_path = (os.environ.get("TTT_MODEL_PATH") or "").strip()
+
+    if backend_env == "dummy":
+        get_asr()  # ensure singleton matches mode
+        return {
+            "asr_backend_class": "DummyASR",
+            "asr_is_dummy": True,
+            "env_ttt_asr_backend": os.environ.get("TTT_ASR_BACKEND", ""),
+            "env_ttt_model_path": env_path,
+            "model_requested": env_path or None,
+            "model_resolved_before_load": None,
+            "model_loaded_path": None,
+            "device": None,
+            "local_whisper_checkpoint_ok": None,
+            "using_openai_whisper_small_fallback": False,
+        }
+
+    requested = _effective_model_raw_from_env()
+    resolved_preview = _resolve_model_path(requested)
+
+    from pathlib import Path
+
+    local_checkpoint_ok: bool | None = None
+    if _is_hub_model_id(resolved_preview):
+        local_checkpoint_ok = None  # 허브 id는 디렉터리 검사 불필요
+    else:
+        p = Path(resolved_preview)
+        local_checkpoint_ok = (
+            p.is_dir()
+            and (p / "config.json").is_file()
+            and (p / "preprocessor_config.json").is_file()
+        )
+
+    asr = get_asr()
+    cls_name = type(asr).__name__
+    loaded_path = getattr(asr, "model_path", None)
+    device = getattr(asr, "device", None)
+    is_dummy = cls_name == "DummyASR"
+    fallback_used = (
+        not is_dummy
+        and loaded_path == DEFAULT_MODEL
+        and requested != DEFAULT_MODEL
+        and not _is_hub_model_id(requested)
+    )
+
+    return {
+        "asr_backend_class": cls_name,
+        "asr_is_dummy": is_dummy,
+        "env_ttt_asr_backend": os.environ.get("TTT_ASR_BACKEND", ""),
+        "env_ttt_model_path": env_path,
+        "model_requested": requested,
+        "model_resolved_before_load": resolved_preview,
+        "model_loaded_path": loaded_path,
+        "device": device,
+        "local_whisper_checkpoint_ok": local_checkpoint_ok,
+        "using_openai_whisper_small_fallback": fallback_used,
+    }
+
+
+def _is_hub_model_id(raw: str) -> bool:
+    """Hugging Face 허브 모델 id 여부 (_resolve_model_path 와 동일 규칙)."""
+    return bool(
+        "/" in raw
+        and not raw.startswith(("/", "."))
+        and not (len(raw) > 2 and raw[1] == ":")
+    )

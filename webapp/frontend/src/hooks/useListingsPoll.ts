@@ -3,26 +3,38 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Listing } from "../types";
 
-const DEFAULT_MS = 4000;
+import { useListingsStreamVersion } from "./useListingsStreamVersion";
 
-/** 목록 주기 갱신 — 판매자 등록 후 소비자 화면에 곧바로 반영 */
-export function useListingsPoll(intervalMs = DEFAULT_MS) {
+const FALLBACK_MS = 15000;
+
+/** 목록 갱신: SSE 우선 + 탭 포커스 + 저주기 폴백 (동일 DB·서버 연동) */
+export function useListingsPoll(intervalMs = FALLBACK_MS) {
+  const streamTick = useListingsStreamVersion();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (outer?: AbortSignal) => {
     try {
-      const data = await api.getListings();
+      const data = await api.getListings(undefined, outer ? { signal: outer } : undefined);
+      if (outer?.aborted) return;
       setListings(data);
     } catch {
+      if (outer?.aborted) return;
       setListings([]);
     } finally {
-      setLoading(false);
+      if (!outer?.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    const ac = new AbortController();
+    void load(ac.signal);
+    return () => ac.abort();
+  }, [load, streamTick]);
+
+  useEffect(() => {
     const id = setInterval(() => void load(), intervalMs);
     const onVis = () => {
       if (document.visibilityState === "visible") void load();

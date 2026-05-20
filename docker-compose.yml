@@ -4,9 +4,16 @@
 #   export TTT_ASR_BACKEND=dummy          # ASR 더미로 빠른 UI 확인 (선택)
 #   docker compose up --build
 #
+# 개발 시 코드 즉시 반영:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   cd webapp/frontend && npm run dev   # http://localhost:5173 (HMR)
+#
 # 접속: http://localhost:8080  (/api 는 nginx → 백엔드)
 # 헬스: http://localhost:8088/health
-# 목록·주문 JSON: 볼륨 marketplace-data → backend/data/runtime
+# 상품·주문 DB: SQLite 파일 webapp/backend/data/runtime/local_link.db (볼륨 persistence)
+#
+# 학습 Whisper 넣기: .env 에 TTT_ASR_BACKEND 비우기, TTT_MODEL_DIR=체크포인트 폴더,
+# TTT_MODEL_PATH=/models → 확인 curl -s :8088/api/voice/status (MODEL_SETUP.md)
 
 services:
   hades-backend:
@@ -21,6 +28,9 @@ services:
       TTT_ASR_BACKEND: ${TTT_ASR_BACKEND:-}
       TTT_MODEL_PATH: ${TTT_MODEL_PATH:-/models}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
     volumes:
       - ${TTT_MODEL_DIR:-./.docker_empty_models}:/models:ro
       - marketplace-data:/app/webapp/backend/data/runtime

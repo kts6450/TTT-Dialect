@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 
 import { api } from "../lib/api";
 import { startRecording } from "../lib/recorder";
+import { useAuthSellerId, useAuthSellerSector } from "../store/auth";
 import { useConversation, WELCOME_SELLER } from "../store/conversation";
 
 /**
  * 판매자 Zero UI — 음성으로 상품·숙박 등록
  */
 export function useVoiceSession() {
+  const sellerSector = useAuthSellerSector();
+  const sellerId = useAuthSellerId();
   const stopperRef = useRef<null | (() => Promise<Blob>)>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const welcomePlayedRef = useRef(false);
@@ -75,12 +78,57 @@ export function useVoiceSession() {
         const price = Number(merged.price);
         if (title && price >= 0 && (kind === "product" || kind === "lodging")) {
           try {
+            let description = String(merged.description || "").trim();
+            const location = String(merged.location || "").trim();
+
+            const imgCat =
+              kind === "lodging" ? "lodging" : (sellerSector ?? "rural");
+            const descTask =
+              !description || description.length < 12
+                ? api
+                    .draftListingPackage({
+                      kind,
+                      title,
+                      price: Math.round(price),
+                      location,
+                      category: imgCat,
+                    })
+                    .then((r) => ({ description: r.description, guide: r.guide }))
+                    .catch(() => ({ description, guide: null }))
+                : Promise.resolve({ description, guide: null });
+
+            const { description: finalDesc, guide } = await descTask;
+            const coverB64 = await api
+              .enhanceImagePrompt({
+                kind,
+                title,
+                location,
+                category: imgCat,
+                description: finalDesc,
+              })
+              .then((enh) =>
+                api.draftListingImage({
+                  kind,
+                  title,
+                  location,
+                  category: imgCat,
+                  description: finalDesc,
+                  prompt_en: enh.prompt_en,
+                })
+              )
+              .then((r) => r.image_base64)
+              .catch(() => undefined);
+
+            const category =
+              kind === "lodging" ? "lodging" : (sellerSector ?? "rural");
             await api.createListing({
               kind,
+              category,
+              seller_id: sellerId ?? undefined,
               title,
-              description: String(merged.description || "").trim(),
+              description: finalDesc,
               price: Math.round(price),
-              location: String(merged.location || "").trim(),
+              location,
               emoji: merged.emoji ? String(merged.emoji) : undefined,
               stock: kind === "product" ? (merged.stock != null ? Number(merged.stock) : 99) : null,
               max_guests:
@@ -89,6 +137,8 @@ export function useVoiceSession() {
                     ? Number(merged.max_guests)
                     : 4
                   : null,
+              cover_image_base64: coverB64 ?? undefined,
+              guide: guide ?? undefined,
             });
             reset("seller");
             welcomePlayedRef.current = false;

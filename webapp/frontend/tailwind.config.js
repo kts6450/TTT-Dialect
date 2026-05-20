@@ -1,31 +1,33 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./src/**/*.{ts,tsx,css}"],
   theme: {
     extend: {
       colors: {
-        // 로컬링크(Local Link) CI — 그린 프라이머리 + 블루 서브 + 오렌지 포인트
         brand: {
           green: "#1B5E20",
           greenLight: "#2E7D32",
+          greenDark: "#14532d",
           blue: "#1976D2",
           orange: "#EF6C00",
+          cream: "#f7faf7",
+          line: "#e5ebe6",
         },
         shop: {
-          teal: "#0d9488",
-          tealHover: "#0f766e",
-          tealDark: "#115e59",
-          tealLight: "#ccfbf1",
-          surface: "#f4faf9",
+          teal: "#1B5E20",
+          tealHover: "#2E7D32",
+          tealDark: "#14532d",
+          tealLight: "#e8f5e9",
+          surface: "#f7faf7",
         },
         hades: {
-          bg: "#f6faf6",
+          bg: "#f7faf7",
           surface: "#ffffff",
-          line: "#e2e8e6",
+          line: "#e5ebe6",
           gold: "#1B5E20",
           accent: "#2E7D32",
-          text: "#1c1917",
-          muted: "#757575",
+          text: "#1a1f1a",
+          muted: "#5c6b5c",
           danger: "#dc2626",
           ok: "#15803d",
         },
@@ -34,12 +36,15 @@ export default {
         sans: ["Pretendard", "system-ui", "sans-serif"],
       },
       fontSize: {
-        // 노인 친화 — 기본 1rem이 18px가 되도록
-        base: ["1.125rem", "1.7"],
-        lg: ["1.35rem", "1.6"],
-        xl: ["1.6rem", "1.5"],
-        "2xl": ["2rem", "1.4"],
-        "3xl": ["2.6rem", "1.3"],
+        base: ["1.0625rem", "1.65"],
+        lg: ["1.25rem", "1.55"],
+        xl: ["1.5rem", "1.45"],
+        "2xl": ["1.875rem", "1.35"],
+        "3xl": ["2.25rem", "1.25"],
+      },
+      boxShadow: {
+        card: "0 1px 3px rgba(27, 94, 32, 0.06), 0 8px 24px -8px rgba(15, 23, 42, 0.1)",
+        "card-hover": "0 4px 20px -4px rgba(27, 94, 32, 0.12), 0 12px 32px -12px rgba(15, 23, 42, 0.14)",
       },
       keyframes: {
         pulse_ring: {

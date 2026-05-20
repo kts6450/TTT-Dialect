@@ -32,10 +32,22 @@ webapp/
 ### 환경변수 (저장소 루트 `.env`)
 
 ```bash
-TTT_ASR_BACKEND=           # dummy = ASR 생략
-TTT_MODEL_PATH=
-ANTHROPIC_API_KEY=sk-ant-… # 전체 음성 도우미(Claude) — 없으면 판매자만 규칙 기반 음성, 구매자는 화면 위주
+# 저장소 루트에서 (최초 1회)
+./scripts/setup-env.sh
+# → .env 생성 후 편집기로 ANTHROPIC_API_KEY, OPENAI_API_KEY 붙여넣기
 ```
+
+| 변수 | 용도 |
+|------|------|
+| `ANTHROPIC_API_KEY` | 음성 도우미, 판매 글 «설명 자동 작성» |
+| `OPENAI_API_KEY` | 판매 글 «대표 사진 AI 생성» |
+| `TTT_ASR_BACKEND=dummy` | Whisper 로딩 생략 (빠른 로컬 실행) |
+
+백엔드는 `main.py`가 **저장소 루트**의 `.env`를 자동 로드합니다. 키를 바꾼 뒤에는 uvicorn을 한 번 재시작하세요.
+
+학습한 Whisper 체크포인트만 넣어서 ASR을 돌리는 단계는 저장소 루트의 **[MODEL_SETUP.md](../MODEL_SETUP.md)** 에 정리해 두었습니다. `GET /api/voice/status`로 폴백·로컬 체크포인트 유효 여부를 확인할 수 있습니다.
+
+판매 글 **AI 설명**은 `ANTHROPIC_API_KEY`가 없을 때도 간단한 고정 문장으로 채워집니다. **AI 대표 이미지**는 `OPENAI_API_KEY`(DALL·E 3)가 있어야 합니다.
 
 ### 백엔드
 
